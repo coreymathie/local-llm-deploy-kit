@@ -1,0 +1,19 @@
+[project]
+name = "local-llm-deploy-kit"
+version = "0.4.0"
+description = "On-prem LLM gateway: Ollama behind an OpenAI-compatible API with keys, rate limits, a tamper-evident audit log, and an admin UI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Corey Mathie", email = "Coremathie@gmail.com" }]
+keywords = ["llm", "ollama", "on-prem", "fastapi", "openai-compatible", "audit-log", "hipaa", "compliance"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "BLE", "UP", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
