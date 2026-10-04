@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>Local LLM Gateway — Admin</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="icon" href="data:," />
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121821; --fg: #e6edf3; --muted: #8b98a5;
+    --accent: #4fb3ff; --danger: #ff6b6b; --ok: #4ade80; --border: #1f2a37;
+  }
+  :root:not([data-theme="dark"]) {
+    --bg: #ffffff; --panel: #f6f8fa; --fg: #1f2328; --muted: #656d76;
+    --accent: #0969da; --danger: #cf222e; --ok: #1a7f37; --border: #d0d7de;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #ffffff; --panel: #f6f8fa; --fg: #1f2328; --muted: #656d76;
+      --accent: #0969da; --danger: #cf222e; --ok: #1a7f37; --border: #d0d7de;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--fg); padding: 16px;
+  }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 24px 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .key-cell { font-family: ui-monospace, monospace; font-size: 12px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .pill.admin { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+  .pill.active { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .pill.revoked { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  button, input {
+    font: inherit; border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+    padding: 6px 12px; border-radius: 6px;
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; font-size: 12px; }
+  .chip.on { border-color: var(--accent); color: var(--accent); }
+  textarea {
+    font: inherit; width: 100%; min-height: 90px; border: 1px solid var(--border); background: var(--bg);
+    color: var(--fg); padding: 8px 10px; border-radius: 6px; resize: vertical;
+  }
+  .answer { white-space: pre-wrap; line-height: 1.6; margin: 10px 0; }
+  .cite { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .source { border-left: 3px solid var(--border); padding: 4px 10px; margin: 8px 0; }
+  .source:target { border-left-color: var(--accent); }
+  .also { margin-top: 8px; }
+  .also summary { cursor: pointer; }
+  .also .source { opacity: .75; }
+  .source .muted { display: block; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .split > * { min-width: 0; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Local LLM Gateway</h1>
+  <div class="row">
+    <span class="muted" id="healthStatus">checking…</span>
+    <button onclick="toggleTheme()">theme</button>
+  </div>
+</header>
+
+<div class="card">
+  <h2>Admin key</h2>
+  <div class="row">
+    <input id="adminKey" type="password" placeholder="sk-local-…" style="flex: 1; min-width: 0; width: 100%; max-width: 420px;" />
+    <button class="primary" onclick="save()">Save</button>
+    <span class="muted">Kept for this tab only; cleared when you close it.</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Models</h2>
+  <div class="row" style="margin-bottom: 10px;">
+    <input id="pullModel" placeholder="llama3.1:8b" style="flex: 1; min-width: 200px;" />
+    <button onclick="pullModel()">Pull</button>
+  </div>
+  <div id="modelsList"></div>
+</div>
+
+<div class="card">
+  <h2>Audit log</h2>
+  <div class="row" style="margin-bottom: 10px;">
+    <span id="chainStatus" class="pill">checking…</span>
+    <span class="muted" id="chainDetail"></span>
+    <button onclick="refresh()">Re-verify</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody id="auditBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Documents</h2>
+  <p class="muted" style="margin-top: 0;">Private Q&amp;A over your own files. Documents are embedded and searched on this machine;
+    answers cite the passages they came from. Adding or removing documents needs an admin key.</p>
+  <div class="row" style="margin-bottom: 10px;">
+    <label for="collection" class="muted">Collection</label>
+    <input id="collection" value="handbook" style="width: 180px;" onchange="loadDocs()" />
+    <div class="chips" id="collectionChips"></div>
+  </div>
+  <div class="split">
+    <div>
+      <div class="row" style="margin-bottom: 8px;">
+        <input type="file" id="docFile" accept=".pdf,.txt,.md,.markdown,.csv,.json,.html,.htm" />
+        <button class="primary" onclick="uploadDoc()">Upload</button>
+      </div>
+      <details>
+        <summary class="muted" style="cursor: pointer;">Or paste text</summary>
+        <div style="display: grid; gap: 8px; margin-top: 8px;">
+          <input id="docTitle" placeholder="Title (e.g., pto-policy.md)" />
+          <textarea id="docText" placeholder="Paste the document text"></textarea>
+          <div><button onclick="addTextDoc()">Add text</button></div>
+        </div>
+      </details>
+      <div class="muted" id="docStatus" style="margin-top: 8px;"></div>
+      <div class="table-wrap">
+        <table style="margin-top: 8px;">
+          <thead><tr><th>Title</th><th>Chunks</th><th>Added</th><th></th></tr></thead>
+          <tbody id="docsBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="row">
+        <input id="question" placeholder="Ask a question about these documents" style="flex: 1; min-width: 200px;"
+               onkeydown="if (event.key === 'Enter') askDocs()" />
+        <button class="primary" onclick="askDocs()">Ask</button>
+      </div>
+      <div id="askOut"><p class="muted">Answers use only this collection and cite their sources, e.g. [1].</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>API keys</h2>
+  <div class="row" style="margin-bottom: 10px;">
+    <input id="newLabel" placeholder="Label (e.g., 'web app')" />
+    <label class="row" style="gap: 4px;"><input type="checkbox" id="newAdmin" /> admin</label>
+    <button class="primary" onclick="createKey()">Create</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Label</th><th>Key</th><th>Status</th><th>Requests</th><th>Tokens</th><th></th></tr></thead>
+      <tbody id="keysBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const BASE = location.origin;
+function toggleTheme() {
+  const r = document.documentElement;
+  r.setAttribute("data-theme", r.getAttribute("data-theme") === "dark" ? "light" : "dark");
+}
+function getKey() { try { return sessionStorage.getItem("adminKey") || ""; } catch { return ""; } }
+function save() {
+  try { sessionStorage.setItem("adminKey", $("adminKey").value); } catch {}
+  refresh(); loadDocs();
+}
+async function call(method, path, body) {
+  const r = await fetch(BASE + path, {
+    method,
+    headers: { "Authorization": "Bearer " + getKey(), "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function refresh() {
+  try {
+    const h = await (await fetch(BASE + "/health")).json();
+    $("healthStatus").textContent = "ollama " + (h.ollama ? "✓" : "✗");
+  } catch {}
+  if (!getKey()) { $("keysBody").innerHTML = '<tr><td colspan="6" class="empty">Enter admin key above.</td></tr>'; $("modelsList").innerHTML = ""; return; }
+  try {
+    const keys = await call("GET", "/admin/keys");
+    $("keysBody").innerHTML = keys.map(k => `
+      <tr>
+        <td>${esc(k.label)} ${k.is_admin ? '<span class="pill admin">admin</span>' : ''}</td>
+        <td class="key-cell" title="${k.key}">${k.key}</td>
+        <td>${k.revoked_at ? '<span class="pill revoked">revoked</span>' : '<span class="pill active">active</span>'}</td>
+        <td>${k.requests_total}</td>
+        <td>${k.tokens_total}</td>
+        <td>${k.revoked_at ? '' : `<button class="danger" onclick="revoke('${k.key}')">Revoke</button>`}</td>
+      </tr>`).join("");
+    const v = await call("GET", "/admin/audit/verify");
+    $("chainStatus").className = "pill " + (v.ok ? "active" : "revoked");
+    $("chainStatus").textContent = v.ok ? "chain intact" : "TAMPERED at line " + v.bad_line;
+    $("chainDetail").textContent = v.entries + " entries verified";
+    const events = await call("GET", "/admin/audit/recent?limit=25");
+    $("auditBody").innerHTML = events.length ? events.map(e => {
+      const p = e.payload || {};
+      const detail = p.title ? `${p.title} (${p.collection})`
+        : p.collection ? `${p.key || ""} asked ${p.collection}`
+        : p.model || p.label || p.key || "";
+      return `<tr><td>${new Date(e.ts).toLocaleString()}</td><td>${esc(e.event)}</td><td>${esc(String(detail))}</td></tr>`;
+    }).join("") : '<tr><td colspan="3" class="empty">No audit events yet.</td></tr>';
+    try {
+      const models = await call("GET", "/v1/models");
+      $("modelsList").innerHTML = models.data.length
+        ? models.data.map(m => `<div class="row" style="padding: 4px 0;"><code>${esc(m.id)}</code></div>`).join("")
+        : '<div class="muted">No models installed. Pull one above.</div>';
+    } catch {
+      $("modelsList").innerHTML = '<div class="muted">Ollama is not reachable. Start it, then refresh.</div>';
+    }
+  } catch (e) {
+    $("keysBody").innerHTML = `<tr><td colspan="6" class="empty">${e.message}</td></tr>`;
+  }
+}
+async function createKey() {
+  if (!$("newLabel").value) return;
+  await call("POST", "/admin/keys", { label: $("newLabel").value, is_admin: $("newAdmin").checked });
+  $("newLabel").value = ""; $("newAdmin").checked = false;
+  refresh();
+}
+async function revoke(key) {
+  if (!confirm("Revoke this key?")) return;
+  await call("DELETE", "/admin/keys/" + encodeURIComponent(key));
+  refresh();
+}
+async function pullModel() {
+  const m = $("pullModel").value.trim(); if (!m) return;
+  await call("POST", "/v1/pull/" + encodeURIComponent(m));
+  alert("Download started in the background. It will appear in the model list when finished.");
+  setTimeout(refresh, 10000);
+}
+let collectionsCache = [];
+function coll() { return $("collection").value.trim().toLowerCase(); }
+function setStatus(msg, bad) { $("docStatus").textContent = msg; $("docStatus").style.color = bad ? "var(--danger)" : ""; }
+function errText(e) {
+  try { const j = JSON.parse(e.message); return j.detail || e.message; } catch { return e.message; }
+}
+async function loadDocs() {
+  if (!getKey()) { $("docsBody").innerHTML = '<tr><td colspan="4" class="empty">Enter admin key above.</td></tr>'; return; }
+  try {
+    collectionsCache = await call("GET", "/v1/collections");
+    $("collectionChips").innerHTML = collectionsCache.map(c =>
+      `<button class="chip ${c.name === coll() ? "on" : ""}" data-name="${esc(c.name)}" onclick="pickCollection(this.dataset.name)">${esc(c.name)} · ${c.documents}</button>`
+    ).join("");
+    const docs = await call("GET", "/v1/collections/" + encodeURIComponent(coll()) + "/documents");
+    $("docsBody").innerHTML = docs.length ? docs.map(d => `
+      <tr>
+        <td>${esc(d.title)}</td>
+        <td>${d.chunks}</td>
+        <td><span title="${esc(d.added_by)}">${new Date(d.created_at).toLocaleDateString()}</span></td>
+        <td><button class="danger" data-id="${esc(d.id)}" data-title="${esc(d.title)}" onclick="removeDoc(this.dataset.id, this.dataset.title)">Remove</button></td>
+      </tr>`).join("") : '<tr><td colspan="4" class="empty">No documents in this collection yet.</td></tr>';
+  } catch (e) {
+    $("docsBody").innerHTML = `<tr><td colspan="4" class="empty">${esc(errText(e))}</td></tr>`;
+  }
+}
+function pickCollection(name) { $("collection").value = name; loadDocs(); }
+async function uploadDoc() {
+  const f = $("docFile").files[0]; if (!f) { setStatus("Choose a file first.", true); return; }
+  setStatus("Reading and embedding " + f.name + "…");
+  const form = new FormData(); form.append("file", f);
+  const r = await fetch(BASE + "/v1/collections/" + encodeURIComponent(coll()) + "/documents", {
+    method: "POST", headers: { "Authorization": "Bearer " + getKey() }, body: form,
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) { setStatus(body.detail || "Upload failed (" + r.status + ")", true); return; }
+  setStatus(`Added ${body.title}: ${body.chunks} passages indexed.`);
+  $("docFile").value = ""; loadDocs();
+}
+async function addTextDoc() {
+  const title = $("docTitle").value.trim(), text = $("docText").value;
+  if (!title || !text.trim()) { setStatus("Add a title and some text.", true); return; }
+  setStatus("Embedding " + title + "…");
+  try {
+    const d = await call("POST", "/v1/collections/" + encodeURIComponent(coll()) + "/documents/text", { title, text });
+    setStatus(`Added ${d.title}: ${d.chunks} passages indexed.`);
+    $("docTitle").value = ""; $("docText").value = ""; loadDocs();
+  } catch (e) { setStatus(errText(e), true); }
+}
+const pendingRemove = {};
+async function removeDoc(id, title) {
+  // Two-step confirm inside the page: first click arms, second click removes.
+  if (!pendingRemove[id]) {
+    pendingRemove[id] = true; setStatus(`Click Remove again to delete "${title}" from ${coll()}.`);
+    setTimeout(() => { delete pendingRemove[id]; }, 5000); return;
+  }
+  delete pendingRemove[id];
+  try { await call("DELETE", `/v1/collections/${encodeURIComponent(coll())}/documents/${encodeURIComponent(id)}`); setStatus("Removed " + title + "."); }
+  catch (e) { setStatus(errText(e), true); }
+  loadDocs();
+}
+function sourcesHtml(list) {
+  return list.map(s => `<div class="source" id="src-${s.n}"><strong>[${s.n}] ${esc(s.title)}</strong>
+    <span class="muted">passage ${s.chunk + 1} · match ${s.score.toFixed(2)}</span>${esc(s.excerpt)}${s.excerpt.length >= 400 ? "…" : ""}</div>`).join("");
+}
+async function askDocs() {
+  const q = $("question").value.trim(); if (!q) return;
+  $("askOut").innerHTML = '<p class="muted">Searching the collection and drafting an answer…</p>';
+  try {
+    const r = await call("POST", "/v1/collections/" + encodeURIComponent(coll()) + "/ask", { question: q });
+    const answer = esc(r.answer).replace(/\[(\d+)\]/g, (m, n) => `<a class="cite" href="#src-${n}">[${n}]</a>`);
+    $("askOut").innerHTML = `<div class="answer">${answer}</div>
+      <div class="muted">${esc(r.model)} · ${r.usage.total_tokens} tokens · logged to the audit trail</div>
+      ${sourcesHtml(r.sources.filter(s => s.cited))}
+      ${r.sources.some(s => !s.cited) ? `<details class="also"><summary class="muted">Also retrieved, not cited (${r.sources.filter(s => !s.cited).length})</summary>${sourcesHtml(r.sources.filter(s => !s.cited))}</details>` : ""}`;
+  } catch (e) {
+    $("askOut").innerHTML = `<p style="color: var(--danger);">${esc(errText(e))}</p>`;
+  }
+}
+$("adminKey").value = getKey();
+refresh();
+loadDocs();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

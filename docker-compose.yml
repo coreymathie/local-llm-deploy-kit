@@ -1,0 +1,49 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: lldk-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    # Uncomment for NVIDIA:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  gateway:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.11-slim
+        WORKDIR /app
+        COPY requirements.txt .
+        RUN pip install --no-cache-dir -r requirements.txt
+        COPY gateway /app/gateway
+        COPY admin-ui /app/admin-ui
+        EXPOSE 8080
+        CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    container_name: lldk-gateway
+    restart: unless-stopped
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8080
+      GATEWAY_DEFAULT_MODEL: llama3.1:8b
+      GATEWAY_EMBED_MODEL: nomic-embed-text
+      GATEWAY_DB_PATH: /data/gateway.db
+      GATEWAY_LOG_DIR: /data/logs
+    volumes:
+      - gateway-data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  ollama-data:
+  gateway-data:
