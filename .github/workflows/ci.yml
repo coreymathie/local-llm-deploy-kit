@@ -11,12 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5  # tests/helm_render (chart render harness)
+        with:
+          go-version: stable
+          cache: false
+      - uses: azure/setup-helm@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt ruff
-      - run: ruff check gateway tests scripts
-      - run: ruff format --check gateway tests scripts
+      - run: pip install -r requirements.txt ruff opentelemetry-sdk "cyclonedx-python-lib[json-validation]"
+      - run: ruff check gateway tests scripts demo
+      - run: ruff format --check gateway tests scripts demo
       - run: pytest -q
+      - run: python scripts/rag_eval.py --check
       - run: shellcheck scripts/*.sh
+      - run: helm lint deploy/helm/local-llm-gateway --strict
+      - run: helm template gw deploy/helm/local-llm-gateway -f deploy/helm/local-llm-gateway/values-vllm-gpu.yaml > /dev/null
+      - run: helm template gw deploy/helm/local-llm-gateway -f deploy/helm/local-llm-gateway/values-airgapped.yaml > /dev/null
+      - run: bash scripts/airgap_bundle.sh --dry-run --ollama-model llama3.1:8b
