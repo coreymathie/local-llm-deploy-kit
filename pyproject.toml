@@ -5,7 +5,7 @@ description = "On-prem LLM gateway: Ollama behind an OpenAI-compatible API with 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
-authors = [{ name = "Corey Mathie", email = "Coremathie@gmail.com" }]
+authors = [{ name = "Corey Mathie" }]
 keywords = ["llm", "ollama", "on-prem", "fastapi", "openai-compatible", "audit-log", "hipaa", "compliance"]
 
 [tool.ruff]
