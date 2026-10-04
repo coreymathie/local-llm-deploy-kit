@@ -13,3 +13,6 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+lldk-airgap-bundle/
+mlbom.cdx.json
+keyring.json
