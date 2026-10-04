@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lldk.fullname" . }}
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate  # one writer on a ReadWriteOnce volume
+  selector:
+    matchLabels:
+      {{- include "lldk.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lldk.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "lldk.fullname" . }}
+          env:
+            - name: GATEWAY_ADMIN_BOOTSTRAP_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "lldk.secretName" . }}, key: bootstrapAdminKey, optional: true}
+            - name: GATEWAY_METRICS_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ include "lldk.secretName" . }}, key: metricsToken, optional: true}
+            - name: OPENAI_COMPAT_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "lldk.secretName" . }}, key: openaiCompatApiKey, optional: true}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+            {{- if .Values.gateway.encryption.keyringSecret }}
+            - {name: keyring, mountPath: /etc/lldk/keyring, readOnly: true}
+            {{- end }}
+            {{- if .Values.gateway.modelLock }}
+            - {name: model-lock, mountPath: /etc/lldk/lock, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "lldk.fullname" .)) .Values.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.gateway.encryption.keyringSecret }}
+        - name: keyring
+          secret:
+            secretName: {{ .Values.gateway.encryption.keyringSecret }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.gateway.modelLock }}
+        - name: model-lock
+          configMap:
+            name: {{ include "lldk.fullname" . }}-model-lock
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
