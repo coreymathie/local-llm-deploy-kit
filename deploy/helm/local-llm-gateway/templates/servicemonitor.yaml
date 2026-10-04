@@ -1,0 +1,27 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "lldk.fullname" . }}
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "lldk.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      {{- if or .Values.secrets.metricsToken .Values.secrets.existingSecret }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ include "lldk.secretName" . }}
+          key: metricsToken
+          optional: true
+      {{- end }}
+{{- end }}

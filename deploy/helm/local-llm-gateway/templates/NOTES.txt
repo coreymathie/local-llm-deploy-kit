@@ -1,0 +1,14 @@
+local-llm-gateway {{ .Chart.AppVersion }} is installed as {{ include "lldk.fullname" . }}.
+
+1. Reach it (ClusterIP by default):
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "lldk.fullname" . }} 8080:{{ .Values.service.port }}
+     curl http://127.0.0.1:8080/health
+
+2. Admin key: {{ if or .Values.secrets.bootstrapAdminKey .Values.secrets.existingSecret }}from the Secret {{ include "lldk.secretName" . }} (key bootstrapAdminKey).{{ else }}generated on first start and printed once in the pod log:
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "lldk.fullname" . }} | grep "Bootstrap admin"{{ end }}
+
+3. Backend: {{ .Values.backend.type }}{{ if .Values.vllm.enabled }} (in-cluster vLLM serving {{ .Values.vllm.model }}; first start downloads or loads weights){{ end }}.
+   Model policy: {{ .Values.gateway.modelPolicy }}{{ if and (eq .Values.gateway.modelPolicy "enforce") (not .Values.gateway.modelLock) }} WITHOUT a model lock: every model will be refused until gateway.modelLock is set{{ end }}.
+
+4. One replica by design (SQLite on a ReadWriteOnce volume). Back it up with scripts/backup.py
+   (kubectl exec into the pod) and see docs/operations.md.
