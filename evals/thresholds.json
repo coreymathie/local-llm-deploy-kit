@@ -1,0 +1,10 @@
+{
+  "_comment": "Regression gates for scripts/rag_eval.py --check (k=4, demo embedder, bundled golden set). Set just under the values measured when they were introduced; raise them when retrieval improves, never lower them to make a change pass.",
+  "max_acl_leaks": 0,
+  "configs": {
+    "vector+none": {"recall@1": 0.88, "recall@4": 0.95, "mrr": 0.92, "citation_accuracy": 0.86, "answer_contains": 0.93},
+    "bm25+none": {"recall@1": 0.97, "recall@4": 0.97, "mrr": 0.97, "citation_accuracy": 0.81, "answer_contains": 0.95},
+    "hybrid+none": {"recall@1": 0.93, "recall@4": 0.97, "mrr": 0.95, "citation_accuracy": 0.81, "answer_contains": 0.95},
+    "hybrid+lexical": {"recall@1": 0.97, "recall@4": 0.97, "mrr": 0.97, "citation_accuracy": 0.81, "answer_contains": 0.93}
+  }
+}
