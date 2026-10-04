@@ -1,0 +1,12 @@
+# Example: gateway plus an in-cluster vLLM on one NVIDIA GPU, model pinning enforced.
+backend:
+  type: openai_compatible
+gateway:
+  defaultModel: Qwen/Qwen2.5-7B-Instruct
+  modelPolicy: enforce
+vllm:
+  enabled: true
+  model: Qwen/Qwen2.5-7B-Instruct
+  gpus: 1
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
