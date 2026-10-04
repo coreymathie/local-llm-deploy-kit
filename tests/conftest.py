@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from gateway import auth, main, rag
+from gateway import auth, backends, main
 from gateway.config import settings
 
 ADMIN = {"Authorization": "Bearer sk-local-admin"}
@@ -65,7 +65,9 @@ def client(tmp_path, monkeypatch):
 
     fake_httpx = SimpleNamespace(AsyncClient=async_client, HTTPError=httpx.HTTPError)
     monkeypatch.setattr(main, "httpx", fake_httpx)
-    monkeypatch.setattr(rag, "httpx", fake_httpx)
+    monkeypatch.setattr(backends, "httpx", fake_httpx)  # all upstream HTTP goes through gateway/backends.py
+    monkeypatch.setattr(settings, "BACKEND", "ollama")
+    backends.set_backend(None)
     with TestClient(main.app) as c:
         yield c
 
