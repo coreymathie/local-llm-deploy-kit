@@ -9,6 +9,7 @@ Nothing needs to change on the client side — this gateway is OpenAI-compatible
 **Python:**
 ```python
 from openai import OpenAI
+
 client = OpenAI(api_key="sk-local-xxxx", base_url="http://localhost:8080/v1")
 r = client.chat.completions.create(
     model="llama3.1:8b",
@@ -34,7 +35,7 @@ curl http://localhost:8080/v1/chat/completions \
 
 ## Pull a different model
 
-Ollama's library: https://ollama.com/library. From the admin page, type the name (e.g., `qwen2.5:14b`) and click Pull. The download runs in the background; the model shows up in the list when it finishes, and both events are recorded in the audit log. Then set `GATEWAY_DEFAULT_MODEL` in `.env` or pass `"model"` in each request.
+Ollama's library: https://ollama.com/library. From the admin page, type the name (e.g., `qwen2.5:14b`) and click Pull. The download runs in the background; the model shows up in the list when it finishes, and both events are recorded in the audit log. Then set `GATEWAY_DEFAULT_MODEL` in `.env` or pass `"model"` in each request. Pulls work with the default Ollama backend; with `BACKEND=openai_compatible` (vLLM and similar) the inference server is started with its model and `/v1/pull` returns 501.
 
 ## Rate limits
 
