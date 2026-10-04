@@ -1,0 +1,43 @@
+{"id": "q01", "question": "How long does a password have to be?", "doc": "it-security-policy.md", "answer_contains": "14 characters"}
+{"id": "q02", "question": "Is MFA required for the VPN?", "doc": "it-security-policy.md", "answer_contains": "Multi-factor authentication is mandatory"}
+{"id": "q03", "question": "After how many minutes of inactivity do laptops lock?", "doc": "it-security-policy.md", "answer_contains": "5 minutes"}
+{"id": "q04", "question": "My phone was stolen. How quickly do I need to report it?", "doc": "it-security-policy.md", "answer_contains": "within 1 hour"}
+{"id": "q05", "question": "What should I do with a suspicious email?", "doc": "it-security-policy.md", "answer_contains": "Report Phishing button"}
+{"id": "q06", "question": "How often are phishing simulations run?", "doc": "it-security-policy.md", "answer_contains": "every quarter"}
+{"id": "q07", "question": "Can I fly business class on a long flight?", "doc": "travel-policy.md", "answer_contains": "longer than 6 hours"}
+{"id": "q08", "question": "What is the nightly hotel limit?", "doc": "travel-policy.md", "answer_contains": "$210 per night"}
+{"id": "q09", "question": "What class of rental car may I book?", "doc": "travel-policy.md", "answer_contains": "compact or intermediate"}
+{"id": "q10", "question": "How much is the daily meal allowance when traveling?", "doc": "travel-policy.md", "answer_contains": "$68 per day"}
+{"id": "q11", "question": "How far ahead should trips be booked?", "doc": "travel-policy.md", "answer_contains": "21 days"}
+{"id": "q12", "question": "Should I take the train for short trips?", "doc": "travel-policy.md", "answer_contains": "under 300 miles"}
+{"id": "q13", "question": "How many weeks of paid leave does a primary caregiver get?", "doc": "parental-leave-policy.md", "answer_contains": "16 weeks"}
+{"id": "q14", "question": "How much leave do secondary caregivers receive?", "doc": "parental-leave-policy.md", "answer_contains": "6 weeks"}
+{"id": "q15", "question": "When do I become eligible for parental leave?", "doc": "parental-leave-policy.md", "answer_contains": "90 days of continuous employment"}
+{"id": "q16", "question": "Is there a phased return after parental leave?", "doc": "parental-leave-policy.md", "answer_contains": "60 percent"}
+{"id": "q17", "question": "How many quotes do I need for a $7,000 purchase?", "doc": "procurement-policy.md", "answer_contains": "three competitive quotes"}
+{"id": "q18", "question": "Who approves purchases above $50,000?", "doc": "procurement-policy.md", "answer_contains": "procurement committee"}
+{"id": "q19", "question": "What must a new vendor complete before the first purchase order?", "doc": "procurement-policy.md", "answer_contains": "security questionnaire"}
+{"id": "q20", "question": "What are the standard payment terms for invoices?", "doc": "procurement-policy.md", "answer_contains": "net 45"}
+{"id": "q21", "question": "How fast must on-call acknowledge a SEV1?", "doc": "incident-response-policy.md", "answer_contains": "15 minutes"}
+{"id": "q22", "question": "What counts as a SEV2 incident?", "doc": "incident-response-policy.md", "answer_contains": "partial outage"}
+{"id": "q23", "question": "How often is the status page updated during a major outage?", "doc": "incident-response-policy.md", "answer_contains": "every 30 minutes"}
+{"id": "q24", "question": "When is the postmortem due?", "doc": "incident-response-policy.md", "answer_contains": "5 business days"}
+{"id": "q25", "question": "What are the data classification levels?", "doc": "data-classification-policy.md", "answer_contains": "Public, Internal, Confidential or Restricted"}
+{"id": "q26", "question": "Can restricted data be sent by email?", "doc": "data-classification-policy.md", "answer_contains": "never be sent by email"}
+{"id": "q27", "question": "How often is access to restricted data reviewed?", "doc": "data-classification-policy.md", "answer_contains": "every 90 days"}
+{"id": "q28", "question": "What are the core hours for remote staff?", "doc": "remote-work-policy.md", "answer_contains": "10:00 to 15:00"}
+{"id": "q29", "question": "How much is the home office stipend?", "doc": "remote-work-policy.md", "answer_contains": "$400"}
+{"id": "q30", "question": "Will the company pay for a coworking space?", "doc": "remote-work-policy.md", "answer_contains": "$150 per month"}
+{"id": "q31", "question": "How many days a year can I work from another country?", "doc": "remote-work-policy.md", "answer_contains": "30 days per calendar year"}
+{"id": "q32", "question": "Do I need the VPN on hotel wifi?", "doc": "remote-work-policy.md", "answer_contains": "Use the VPN"}
+{"id": "q33", "question": "What is the deadline for submitting an expense report?", "doc": "expense-reimbursement-policy.md", "answer_contains": "within 45 days"}
+{"id": "q34", "question": "Do I need a receipt for a $30 lunch?", "doc": "expense-reimbursement-policy.md", "answer_contains": "over $25"}
+{"id": "q35", "question": "When must corporate card statements be reconciled?", "doc": "expense-reimbursement-policy.md", "answer_contains": "5th of each month"}
+{"id": "q36", "question": "How much tip is reimbursed?", "doc": "expense-reimbursement-policy.md", "answer_contains": "20 percent"}
+{"id": "q37", "question": "When does a new hire's laptop ship?", "doc": "onboarding-guide.md", "answer_contains": "5 business days before"}
+{"id": "q38", "question": "How soon must compliance training be finished?", "doc": "onboarding-guide.md", "answer_contains": "within 14 days"}
+{"id": "q39", "question": "What is the retirement match?", "doc": "benefits-overview.md", "answer_contains": "4 percent"}
+{"id": "q40", "question": "When does health insurance start for new employees?", "doc": "benefits-overview.md", "answer_contains": "first day of the month after"}
+{"id": "q41", "question": "How much is the wellness reimbursement?", "doc": "benefits-overview.md", "answer_contains": "$600 per year"}
+{"id": "q42", "question": "What is the level 3 engineer salary band?", "doc": "hr-salary-bands.md", "answer_contains": "$103,000 to $126,000"}
+{"id": "q43", "question": "What is the breach hotline code word?", "doc": "security-escalation-contacts.md", "answer_contains": "LANTERN"}
