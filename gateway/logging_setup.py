@@ -10,6 +10,8 @@ from .redact import redact
 
 def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # httpx logs every upstream request at INFO; that is per-request I/O and noise on a busy gateway.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def log_prompt(key_label: str, model: str, prompt: str, response: str, tokens: int) -> None:

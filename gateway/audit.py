@@ -10,6 +10,10 @@ Each JSONL entry carries the SHA-256 of the previous entry, so editing or
 deleting any line breaks the chain from that point on. `verify()` walks the
 file and returns the first bad line. The admin UI shows the result.
 
+With GATEWAY_AUDIT_ENCRYPT_TEXT=true, prompt/response/question/answer
+fields are sealed with AES-256-GCM before hashing (gateway/crypto.py), so
+verify() needs no key and the file holds no readable prompt text.
+
 Rotation: archive the file to WORM storage (S3 Object Lock, immutable Blob,
 etc.) and start a new one. The first entry of the new file records the last
 hash of the archived file as an anchor, so the two can be verified together.
@@ -24,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import crypto
 from .config import settings
 
 GENESIS_HASH = "0" * 64
@@ -59,6 +64,7 @@ def append(event: str, payload: dict[str, Any]) -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     with _lock:
         prev = _tail_hash(path)
+        payload = crypto.protect_payload(payload)  # seals free-text fields if GATEWAY_AUDIT_ENCRYPT_TEXT
         core = {"ts": datetime.now(UTC).isoformat(), "event": event, "payload": payload, "prev_hash": prev}
         entry = {**core, "entry_hash": _sha256(_canonical(core))}
         with path.open("a") as f:
@@ -66,9 +72,9 @@ def append(event: str, payload: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
-def verify() -> dict[str, Any]:
+def verify(path: Path | None = None) -> dict[str, Any]:
     """Walk the chain. Returns {"ok": bool, "entries": int, "bad_line": int | None}."""
-    path = _path()
+    path = path or _path()
     if not path.exists():
         return {"ok": True, "entries": 0, "bad_line": None}
     prev = GENESIS_HASH
@@ -89,9 +95,15 @@ def verify() -> dict[str, Any]:
     return {"ok": True, "entries": n, "bad_line": None}
 
 
-def recent(limit: int = 50) -> list[dict[str, Any]]:
+def recent(limit: int = 50, reveal: bool = True) -> list[dict[str, Any]]:
+    """Newest entries first. Sealed fields are opened for display when the key is available."""
     path = _path()
     if not path.exists():
         return []
     lines = [line for line in path.read_text().splitlines() if line.strip()]
-    return [json.loads(line) for line in lines[-limit:]][::-1]
+    rows = [json.loads(line) for line in lines[-limit:]][::-1]
+    if reveal:
+        for row in rows:
+            if any(crypto.is_sealed(v) for v in row.get("payload", {}).values()):
+                row["payload"] = crypto.reveal_payload(row["payload"])
+    return rows
