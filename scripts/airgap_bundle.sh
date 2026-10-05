@@ -5,7 +5,7 @@
 # SHA256SUMS file over everything. Run it on a connected machine, carry the folder across, verify it
 # with --verify, then follow INSTALL.txt inside the bundle.
 #
-#   bash scripts/airgap_bundle.sh --dry-run --image registry.example.internal/local-llm-gateway:0.6.0 \
+#   bash scripts/airgap_bundle.sh --dry-run --image registry.example.internal/local-llm-gateway:0.7.0 \
 #       --ollama-model llama3.1:8b --ollama-model nomic-embed-text:latest
 #   bash scripts/airgap_bundle.sh --out /media/usb/lldk --platform manylinux2014_x86_64 --python-version 3.12 \
 #       --image vllm/vllm-openai:v0.6.6 --hf-model Qwen/Qwen2.5-7B-Instruct
@@ -72,7 +72,7 @@ while [ $# -gt 0 ]; do
 done
 
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/pyproject.toml")"
-echo "local-llm-deploy-kit $VERSION -> $OUT$([ "$DRY_RUN" = 1 ] && echo ' (dry run: nothing is written)')"
+echo "private-llm-platform $VERSION -> $OUT$([ "$DRY_RUN" = 1 ] && echo ' (dry run: nothing is written)')"
 
 need sha256sum "checksums"
 need python3 "wheels, Ollama manifests, ML-BOM"
@@ -97,9 +97,9 @@ fi
 
 # 2. Source, Helm chart, requirements, model lock.
 if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  run git -C "$ROOT" archive --format=tar.gz -o "$OUT/source/local-llm-deploy-kit-$VERSION.tar.gz" HEAD
+  run git -C "$ROOT" archive --format=tar.gz -o "$OUT/source/private-llm-platform-$VERSION.tar.gz" HEAD
 else
-  run tar -czf "$OUT/source/local-llm-deploy-kit-$VERSION.tar.gz" -C "$ROOT" --exclude=.git .
+  run tar -czf "$OUT/source/private-llm-platform-$VERSION.tar.gz" -C "$ROOT" --exclude=.git .
 fi
 run tar -czf "$OUT/source/local-llm-gateway-chart-$VERSION.tgz" -C "$ROOT/deploy/helm" local-llm-gateway
 run cp "$ROOT/requirements.txt" "$OUT/source/requirements.txt"
@@ -159,7 +159,7 @@ if [ "$DRY_RUN" = 1 ]; then
   exit 0
 fi
 cat > "$OUT/INSTALL.txt" <<TXT
-local-llm-deploy-kit $VERSION offline bundle
+private-llm-platform $VERSION offline bundle
 
 1. Verify:            bash scripts/airgap_bundle.sh --verify <this folder>   (or: sha256sum -c SHA256SUMS)
 2. Images:            for f in images/*.tar; do docker load -i "\$f"; done   (then push to your registry)
