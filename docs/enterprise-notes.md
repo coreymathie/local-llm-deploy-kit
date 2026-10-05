@@ -8,7 +8,7 @@
 ## Service installation
 
 ### macOS (launchd)
-Save as `~/Library/LaunchAgents/com.local-llm-deploy-kit.gateway.plist`, then `launchctl load`.
+Save as `~/Library/LaunchAgents/com.private-llm-platform.gateway.plist`, then `launchctl load`.
 Keys: `OLLAMA_HOST`, `GATEWAY_PORT`, working dir = the cloned repo.
 
 ### Linux (systemd)
