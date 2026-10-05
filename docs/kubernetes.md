@@ -4,7 +4,7 @@ Chart: [`deploy/helm/local-llm-gateway`](../deploy/helm/local-llm-gateway). Imag
 `Dockerfile` and push it to your registry (no public image is published).
 
 ```bash
-docker build -t registry.example.internal/local-llm-gateway:0.6.0 . && docker push registry.example.internal/local-llm-gateway:0.6.0
+docker build -t registry.example.internal/local-llm-gateway:0.7.0 . && docker push registry.example.internal/local-llm-gateway:0.7.0
 helm install gw deploy/helm/local-llm-gateway -n llm --create-namespace \
   --set backend.type=ollama --set backend.ollamaHost=http://ollama.llm.svc.cluster.local:11434
 # or with an in-cluster vLLM on one NVIDIA GPU:
@@ -46,7 +46,7 @@ OIDC without an issuer or audience.
 ## Air-gapped install
 
 ```bash
-bash scripts/airgap_bundle.sh --dry-run --image registry.example.internal/local-llm-gateway:0.6.0 \
+bash scripts/airgap_bundle.sh --dry-run --image registry.example.internal/local-llm-gateway:0.7.0 \
   --image vllm/vllm-openai:v0.6.6 --hf-model Qwen/Qwen2.5-7B-Instruct --ollama-model nomic-embed-text:latest \
   --platform manylinux2014_x86_64 --python-version 3.12
 bash scripts/airgap_bundle.sh --out /media/transfer/lldk ...same options...

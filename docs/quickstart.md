@@ -2,6 +2,9 @@
 
 The one-liner installers in the README set everything up. This doc covers the parts people usually ask about afterwards.
 
+To look around first without installing a model, run `docker compose up` and open
+`http://localhost:8080/console/` (simulated backend; the admin key is in `docker compose logs gateway`).
+
 ## Try it with an OpenAI client
 
 Nothing needs to change on the client side — this gateway is OpenAI-compatible.

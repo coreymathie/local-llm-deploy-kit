@@ -1,13 +1,13 @@
-# local-llm-deploy-kit: Windows installer (run in an elevated PowerShell)
-#   iwr -useb https://raw.githubusercontent.com/coreymathie/local-llm-deploy-kit/main/scripts/install_windows.ps1 | iex
+# private-llm-platform: Windows installer (run in an elevated PowerShell)
+#   iwr -useb https://raw.githubusercontent.com/coreymathie/private-llm-platform/main/scripts/install_windows.ps1 | iex
 # Corey Mathie, 2026
 
 $ErrorActionPreference = "Stop"
 
 $Model      = if ($env:LLDK_MODEL) { $env:LLDK_MODEL } else { "llama3.1:8b" }
 $EmbedModel = if ($env:LLDK_EMBED_MODEL) { $env:LLDK_EMBED_MODEL } else { "nomic-embed-text" }
-$InstallDir = if ($env:LLDK_DIR)   { $env:LLDK_DIR }   else { "$env:USERPROFILE\.local-llm-deploy-kit" }
-$Repo       = if ($env:LLDK_REPO)  { $env:LLDK_REPO }  else { "https://github.com/coreymathie/local-llm-deploy-kit.git" }
+$InstallDir = if ($env:LLDK_DIR)   { $env:LLDK_DIR }   else { "$env:USERPROFILE\.private-llm-platform" }
+$Repo       = if ($env:LLDK_REPO)  { $env:LLDK_REPO }  else { "https://github.com/coreymathie/private-llm-platform.git" }
 
 function Test-Cmd($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 function Refresh-Path {

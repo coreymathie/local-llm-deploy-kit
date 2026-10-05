@@ -68,7 +68,7 @@ def genai_span(
     if not OTEL_AVAILABLE or _trace is None:
         yield GenAISpan()
         return
-    tracer = _trace.get_tracer("local-llm-deploy-kit.gateway")
+    tracer = _trace.get_tracer("private-llm-platform.gateway")
     span = tracer.start_span(f"{operation} {model}", kind=SpanKind.CLIENT)
     token = _context.attach(_trace.set_span_in_context(span)) if current else None
     wrapper = GenAISpan(span)

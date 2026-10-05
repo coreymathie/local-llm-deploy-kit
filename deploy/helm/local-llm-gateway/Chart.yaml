@@ -2,8 +2,8 @@ apiVersion: v2
 name: local-llm-gateway
 description: Private LLM gateway (OpenAI-compatible API, API keys and OIDC, permission-aware document Q&A, audit log) with an optional vLLM backend
 type: application
-version: 0.6.0
-appVersion: "0.6.0"
+version: 0.7.0
+appVersion: "0.7.0"
 keywords: [llm, vllm, ollama, gateway, rag, audit]
-home: https://github.com/coreymathie/local-llm-deploy-kit
-sources: [https://github.com/coreymathie/local-llm-deploy-kit]
+home: https://github.com/coreymathie/private-llm-platform
+sources: [https://github.com/coreymathie/private-llm-platform]

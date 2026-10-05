@@ -11,6 +11,8 @@ OpenAI-compatible server such as vLLM, SGLang, TGI or NVIDIA NIM; see backends.p
 - /v1/collections/... private document Q&A (retrieval over local files, cited answers)
 - /v1/embeddings OpenAI-compatible embeddings from the local embedding model
 - /admin serves the single-file dashboard
+- /console serves the product console (demo/ in live mode) and /admin/overview, /admin/audit/entries,
+  /admin/access-matrix, /admin/policy, /admin/rate-limits, /admin/models/mlbom feed it
 - /metrics Prometheus metrics (optionally bearer-protected)
 """
 
@@ -20,17 +22,19 @@ import asyncio
 import json
 import logging
 import secrets
+import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import audit, crypto, identity, metrics, rag, supply_chain
+from . import audit, auth, console, crypto, identity, metrics, rag, supply_chain
 from .auth import require_admin, require_key, require_user
 from .backends import BackendHTTPError, BackendNotSupported, ChatParams, aclose_clients, get_backend
 from .config import settings
@@ -48,7 +52,7 @@ from .store import (
     revoke_key,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 setup_logging()
 log = logging.getLogger("gateway")
@@ -83,7 +87,7 @@ async def lifespan(_app: FastAPI):
     await aclose_clients()
 
 
-app = FastAPI(title="local-llm-deploy-kit", version=__version__, lifespan=lifespan)
+app = FastAPI(title="private-llm-platform", version=__version__, lifespan=lifespan)
 app.add_middleware(metrics.MetricsMiddleware)
 
 
@@ -368,6 +372,9 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=4, ge=1, le=12)
     model: str | None = None
+    # Per-request ranking choice (defaults: GATEWAY_RETRIEVAL_MODE / GATEWAY_RERANKER). Never changes access.
+    retrieval_mode: Literal["vector", "bm25", "hybrid"] | None = None
+    reranker: Literal["none", "lexical", "cross_encoder"] | None = None
 
 
 class EmbeddingsRequest(BaseModel):
@@ -511,13 +518,16 @@ async def remove_document(collection: str, doc_id: str, admin: AdminDep) -> dict
 @app.post("/v1/collections/{collection}/ask")
 async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
     """Answer from the collection's documents only, with numbered citations."""
+    started = time.perf_counter()
     try:
         rag.check_collection(collection)
+        config = rag.retrieval_config(body.retrieval_mode, body.reranker)
     except rag.RagError as e:
         raise HTTPException(400, str(e)) from e
-    if settings.GATEWAY_RETRIEVAL_MODE != "bm25":
+    if config["mode"] != "bm25":
         await _model_allowed(settings.GATEWAY_EMBED_MODEL)
     access = rag.access_for(key, collection)  # decided before any passage is loaded or scored
+    t_access = time.perf_counter()
     if not access.doc_ids:
         if access.hidden:  # documents exist that this caller may not read: record the denial
             audit.append(
@@ -525,7 +535,9 @@ async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
             )
         raise HTTPException(404, f"collection {collection!r} has no documents yet")
     try:
-        sources = await rag.retrieve(collection, body.question, body.top_k, access)
+        sources = await rag.retrieve(
+            collection, body.question, body.top_k, access, mode=config["mode"], reranker=config["reranker"]
+        )
     except (rag.RagError, httpx.HTTPError) as e:
         raise _rag_error(e) from e
     except crypto.CryptoError as e:  # missing or wrong key, or altered ciphertext: fail closed, say why
@@ -534,6 +546,7 @@ async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
     if not sources:
         raise HTTPException(404, f"collection {collection!r} has no documents yet")
 
+    t_retrieval = time.perf_counter()
     model = body.model or settings.GATEWAY_DEFAULT_MODEL
     model_status = await _model_allowed(model)
     params = ChatParams(model=model, messages=rag.build_messages(body.question, sources), temperature=0.1)
@@ -541,6 +554,12 @@ async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
         result = await get_backend().chat(params)
     except (BackendHTTPError, httpx.HTTPError) as e:
         raise _rag_error(e) from e
+    t_generation = time.perf_counter()
+    timings = {
+        "access": round((t_access - started) * 1000, 2),
+        "retrieval": round((t_retrieval - t_access) * 1000, 2),
+        "generation": round((t_generation - t_retrieval) * 1000, 2),
+    }
     answer = result.content
     tokens = result.prompt_tokens + result.completion_tokens
     record_principal_usage(key, tokens)
@@ -554,7 +573,7 @@ async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
         "collection": collection,
         "model": model,
         **({"model_verification": model_status} if model_status else {}),
-        "retrieval": rag.retrieval_config(),
+        "retrieval": config,
         "access": access.audit(),
         "sources": [
             {
@@ -568,6 +587,7 @@ async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
             for s in sources
         ],
         "tokens": tokens,
+        "timings_ms": timings,
     }
     if settings.GATEWAY_LOG_PROMPTS:
         if settings.GATEWAY_REDACT_PROMPTS:
@@ -594,7 +614,8 @@ async def ask(collection: str, body: AskRequest, key: KeyDep) -> dict:
             }
             for s in sources
         ],
-        "retrieval": rag.retrieval_config(),
+        "retrieval": config,
+        "timings_ms": timings,
         "usage": {"total_tokens": tokens},
     }
 
@@ -625,3 +646,127 @@ async def embeddings(body: EmbeddingsRequest, key: UserDep) -> dict:
 async def admin_page():
     html = Path(__file__).resolve().parent.parent / "admin-ui" / "index.html"
     return FileResponse(str(html), media_type="text/html")
+
+
+# ---------- Console (the demo/ console in live mode) ----------
+
+CONSOLE_DIR = Path(__file__).resolve().parent.parent / "demo"
+
+
+@app.get("/admin/overview")
+async def admin_overview(_a: AdminDep) -> dict:
+    """Counters for the console's Overview: requests, identities, documents, audit chain, access decisions."""
+    out = console.overview()
+    out["version"] = __version__
+    out["backend"] = {
+        "name": get_backend().name,
+        "default_model": settings.GATEWAY_DEFAULT_MODEL,
+        "embed_model": settings.GATEWAY_EMBED_MODEL,
+    }
+    return out
+
+
+@app.get("/admin/audit/entries")
+async def admin_audit_entries(_a: AdminDep, limit: int = 200) -> dict:
+    """Newest entries first with their line numbers and a one-line summary, plus the chain verification."""
+    rows = console.audit_rows(limit=min(max(limit, 1), 2000))[::-1]
+    for row in rows:
+        payload = row.get("payload") or {}
+        if any(crypto.is_sealed(v) for v in payload.values()):
+            row["payload"] = crypto.reveal_payload(payload)
+        row["summary"] = console.summarize_entry(row)
+    return {"verify": audit.verify(), "entries": rows}
+
+
+@app.get("/admin/access-matrix")
+async def admin_access_matrix(collection: str, _a: AdminDep) -> dict:
+    """Every active key and every mapped IdP group against every document of a collection: readable, and why."""
+    try:
+        return console.access_matrix(collection)
+    except rag.RagError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/admin/policy")
+async def admin_policy(_a: AdminDep) -> dict:
+    return {"policy": console.current_policy(), "fields": console.POLICY_FIELDS, "persisted": False}
+
+
+@app.post("/admin/policy/validate")
+async def admin_policy_validate(body: dict, _a: AdminDep) -> dict:
+    """Check a policy document without applying it."""
+    try:
+        return {"ok": True, "policy": console.validate_policy(body), "errors": []}
+    except console.PolicyError as e:
+        return {"ok": False, "policy": None, "errors": e.errors}
+
+
+@app.put("/admin/policy")
+async def admin_policy_apply(body: dict, admin: AdminDep) -> dict:
+    """Apply runtime policy in memory (audited). A restart reads the environment again."""
+    try:
+        before, after = console.apply_policy(body)
+    except console.PolicyError as e:
+        raise HTTPException(422, e.errors) from e
+    if after:
+        audit.append("policy_changed", {"before": before, "after": after, "by": admin.label})
+    return {"policy": console.current_policy(), "changed": after, "persisted": False}
+
+
+@app.get("/admin/rate-limits")
+async def admin_rate_limits(_a: AdminDep) -> dict:
+    """Requests each active key made in the current sliding window (in-memory, this process only)."""
+    now = time.monotonic()
+    keys = []
+    for k in list_keys():
+        if k.revoked_at:
+            continue
+        window = [t for t in auth._calls.get(k.key, ()) if t >= now - auth._WINDOW_SEC]
+        keys.append({"label": k.label, "key": _mask(k.key), "in_window": len(window)})
+    return {"limit_per_min": settings.GATEWAY_RATE_LIMIT_PER_MIN, "window_seconds": int(auth._WINDOW_SEC), "keys": keys}
+
+
+class LockText(BaseModel):
+    text: str = Field(max_length=1_000_000)
+
+
+@app.post("/admin/models/lock/validate")
+async def admin_validate_lock(body: LockText, _a: AdminDep) -> dict:
+    """Validate a model lock document with the loader the gateway uses at startup. Nothing is written."""
+    try:
+        pins = supply_chain.parse_lock(json.loads(body.text))
+    except ValueError as e:  # JSON errors and LockError
+        return {"ok": False, "error": str(e), "models": []}
+    return {"ok": True, "error": None, "models": [p.__dict__ for p in pins]}
+
+
+@app.get("/admin/models/mlbom")
+async def admin_mlbom(_a: AdminDep) -> dict:
+    """The model components of the CycloneDX ML-BOM (scripts/mlbom.py) for the configured lock file."""
+    try:
+        from scripts.mlbom import model_components
+    except ImportError as e:
+        raise HTTPException(501, "scripts/mlbom.py is not installed next to the gateway") from e
+    try:
+        pins = supply_chain.load_lock()
+    except supply_chain.LockError as e:
+        raise HTTPException(400, str(e)) from e
+    return {
+        "lock_file": settings.GATEWAY_MODEL_LOCK_FILE,
+        "components": model_components(pins, supply_chain.last_result()),
+    }
+
+
+@app.get("/console", include_in_schema=False)
+async def console_redirect():
+    return RedirectResponse("/console/")
+
+
+@app.get("/console/api-mode", include_in_schema=False)
+async def console_mode() -> dict:
+    """Tells the console it is served by a gateway (live mode). Static hosting has no such file (demo mode)."""
+    return {"mode": "live", "product": "Private LLM Platform", "version": __version__, "backend": get_backend().name}
+
+
+if CONSOLE_DIR.is_dir():
+    app.mount("/console", StaticFiles(directory=str(CONSOLE_DIR), html=True), name="console")
