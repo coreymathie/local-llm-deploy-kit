@@ -136,7 +136,7 @@ def test_default_render_is_a_hardened_single_replica_gateway(renderer):
         "readOnlyRootFilesystem": True,
         "capabilities": {"drop": ["ALL"]},
     }
-    assert c["image"] == "registry.example.internal/local-llm-gateway:0.6.0"
+    assert c["image"] == "registry.example.internal/local-llm-gateway:0.7.0"
     for probe in ("startupProbe", "livenessProbe", "readinessProbe"):
         assert c[probe]["httpGet"] == {"path": "/health", "port": "http"}
     assert {m["mountPath"] for m in c["volumeMounts"]} == {"/data", "/tmp"}
