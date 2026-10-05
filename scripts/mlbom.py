@@ -34,7 +34,7 @@ if str(ROOT) not in sys.path:
 
 from gateway import supply_chain  # noqa: E402
 
-GATEWAY_REF = "local-llm-deploy-kit"
+GATEWAY_REF = "private-llm-platform"
 
 
 def _norm(name: str) -> str:
@@ -166,13 +166,13 @@ def build(lock: Path | None, requirements: Path, verification: dict | None = Non
             "timestamp": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "tools": {
                 "components": [
-                    {"type": "application", "name": "local-llm-deploy-kit scripts/mlbom.py", "version": version}
+                    {"type": "application", "name": "private-llm-platform scripts/mlbom.py", "version": version}
                 ]
             },
             "component": {
                 "type": "application",
                 "bom-ref": GATEWAY_REF,
-                "name": "local-llm-deploy-kit",
+                "name": "private-llm-platform",
                 "version": version,
             },
         },

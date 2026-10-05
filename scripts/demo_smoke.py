@@ -1,17 +1,26 @@
 # Corey Mathie, 2026
 """
-Headless smoke test of the browser demo (demo/index.html) with Playwright.
+Headless smoke test of the console (demo/) in both modes, with Playwright.
 
     pip install playwright && playwright install chromium
-    python scripts/demo_smoke.py                      # Pyodide from cdn.jsdelivr.net
-    python scripts/demo_smoke.py --pyodide-dir ./pyodide-0.26.4/pyodide   # offline copy of the release
+    python scripts/demo_smoke.py                                  # demo mode, Pyodide from cdn.jsdelivr.net
+    python scripts/demo_smoke.py --pyodide-dir ./pyodide-0.26.4/pyodide   # offline copy of the Pyodide release
+    python scripts/demo_smoke.py --live --skip-demo               # live mode only (no Pyodide needed)
+    python scripts/demo_smoke.py --live --screenshots out/        # both, with desktop and mobile screenshots
 
-Serves the repo root on a local port (like GitHub Pages does), opens /demo/,
-waits for Pyodide and the gateway modules to load, then drives every panel:
-keys + rate limit + revocation, redaction, audit verify/tamper/restore,
-document Q&A with citations and an injection-flagged document, and identity:
-personas in different groups get different answers and citations. Also checks
-there is no horizontal scroll at phone width. Exits non-zero on any failure.
+Demo mode: serves the repo root on a local port (like GitHub Pages does), opens /demo/, waits for Pyodide
+and the gateway modules, then visits every screen and performs its key interaction: the guided tour,
+overview counters and charts, permission-aware chat (personas, compare, retrieval switches, raw chat 403),
+documents (add, untrusted document, access list edit, access matrix), keys (create, burst over the rate
+limit, revoke), audit (verify, tamper, restore, decision timeline), models (pin, re-pull mismatch, enforce
+403, ML-BOM, lock validation), policies (invalid policy errors, apply, scenario before/after), evals
+(scorecard, re-run in the browser matches the committed results) and settings.
+
+Live mode: starts scripts/mock_openai_server.py (MOCK_MODE=simulated) and the gateway with uvicorn on free
+ports, opens /console/, signs in with a generated admin key, loads the sample data through the API, and
+exercises Overview, Chat and Audit, then visits the other screens.
+
+Both: no console errors, no horizontal page scroll at 390 px. Exits non-zero on any failure.
 """
 
 from __future__ import annotations
@@ -19,13 +28,21 @@ from __future__ import annotations
 import argparse
 import functools
 import http.server
+import os
 import re
+import secrets
+import socket
+import subprocess
 import sys
+import tempfile
 import threading
+import time
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CDN = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"
+SCREENS = ["overview", "chat", "documents", "users", "audit", "models", "policies", "evals", "settings"]
 
 
 class _Quiet(http.server.SimpleHTTPRequestHandler):
@@ -40,174 +57,471 @@ def serve(port: int) -> http.server.ThreadingHTTPServer:
     return httpd
 
 
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class Run:
+    def __init__(self, shots: Path | None):
+        self.checks: list[str] = []
+        self.errors: list[str] = []
+        self.shots = shots
+
+    def ok(self, msg: str) -> None:
+        self.checks.append(msg)
+        print(f"  ok  {msg}")
+
+    def watch(self, page) -> None:
+        page.on("console", lambda m: m.type == "error" and self.errors.append(m.text))
+        page.on("pageerror", lambda e: self.errors.append(str(e)))
+
+    def shot(self, page, name: str, full: bool = True) -> None:
+        if self.shots:
+            self.shots.mkdir(parents=True, exist_ok=True)
+            page.evaluate("window.scrollTo(0, 0); document.getElementById('toasts').replaceChildren()")
+            page.screenshot(path=str(self.shots / f"{name}.png"), full_page=full)
+
+
+def goto(page, screen: str) -> None:
+    page.evaluate(f"location.hash = '#/{screen}'")
+    page.wait_for_selector(f'#view > [data-screen="{screen}"][data-loaded="true"]', timeout=60_000)
+
+
+def no_overflow(page) -> int:
+    return page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+
+
+def mobile_pass(run: Run, page, prefix: str) -> None:
+    page.set_viewport_size({"width": 390, "height": 844})
+    for s in SCREENS:
+        goto(page, s)
+        page.wait_for_timeout(150)
+        overflow = no_overflow(page)
+        assert overflow <= 0, f"{prefix} {s}: horizontal scroll at 390px ({overflow}px)"
+        if s in ("overview", "chat", "audit"):
+            run.shot(page, f"{prefix}-mobile-{s}")
+    run.ok(f"{prefix}: no horizontal page scroll at 390 px on all {len(SCREENS)} screens")
+    page.click("#menuBtn")
+    page.wait_for_selector("#sidebar.open")
+    assert page.locator("#nav a").first.is_visible()
+    run.shot(page, f"{prefix}-mobile-menu", full=False)
+    page.keyboard.press("Escape")
+    run.ok(f"{prefix}: navigation collapses to a menu button on phones")
+    page.set_viewport_size({"width": 1366, "height": 900})
+
+
+# ------------------------------------------------------------------------------------------------
+# Demo mode
+# ------------------------------------------------------------------------------------------------
+
+
+def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
+    from playwright.sync_api import expect
+
+    httpd = serve(port)
+    browser = p.chromium.launch()
+    page = browser.new_page(viewport={"width": 1366, "height": 900})
+    run.watch(page)
+    if pyodide_dir:
+        local = pyodide_dir.resolve()
+
+        def fulfill(route):
+            name = route.request.url.split(CDN, 1)[1].split("?", 1)[0]
+            f = local / name
+            if f.is_file():
+                ctype = "application/wasm" if name.endswith(".wasm") else None
+                route.fulfill(path=str(f), content_type=ctype, headers={"Access-Control-Allow-Origin": "*"})
+            else:
+                route.fulfill(status=404, body=f"not in local pyodide dir: {name}")
+
+        page.route(f"{CDN}**", fulfill)
+
+    started = time.time()
+    page.goto(f"http://127.0.0.1:{port}/demo/")
+    page.wait_for_function("document.body.dataset.ready", timeout=240_000)
+    assert page.evaluate("document.body.dataset.ready") == "true", page.inner_text("#bootNote")
+    run.ok(f"demo: Pyodide loaded, gateway modules fetched, samples ingested ({time.time() - started:.0f} s)")
+    expect(page.locator("#modeBadge")).to_contain_text("Demo")
+    expect(page.locator("#modeBadge")).to_have_class(re.compile("demo"))
+    run.ok("demo: header badge says Demo · runs in your browser")
+
+    # Guided tour (first visit), dismissal remembered
+    expect(page.locator("#tourCard")).to_be_visible()
+    for _ in range(4):
+        page.click("#tourNext")
+    expect(page.locator("#tourCard")).to_contain_text("Step 5 of 5")
+    page.click("#tourNext")
+    expect(page.locator("#tourCard")).to_be_hidden()
+    assert page.evaluate("localStorage.getItem('plp.tourDone')") == "1"
+    run.ok("demo: 5-step guided tour shown on first visit; dismissal stored")
+
+    # 1. Overview
+    goto(page, "overview")
+    assert int(page.inner_text('[data-kpi="requests"]').replace(",", "")) >= 5
+    expect(page.locator('[data-kpi="chain"]')).to_have_text("Intact")
+    assert page.locator("#view svg.chart").count() == 2 and page.locator(".try").count() == 5
+    run.ok("demo overview: KPIs from the engine, chain intact, 2 charts, 5 guided cards")
+    run.shot(page, "demo-overview")
+
+    # 2. Chat: personas, citations, compare, retrieval switches, raw chat
+    goto(page, "chat")
+    page.select_option("#persona", "priya")
+    expect(page.locator("#who")).to_contain_text("user:priya")
+    page.click('#suggest button[data-q="What is the level 3 salary band?"]')
+    last = page.locator("#thread .msg.bot").last
+    expect(last.locator(".answer")).to_contain_text("$77,000")
+    first = page.locator("#sources .source").first
+    expect(first).to_contain_text("restricted-hr-compensation-bands.md")
+    expect(first.locator(".pill.ok")).to_have_text("cited")
+    last.locator(".cite").first.click()
+    expect(page.locator("#sources .source.hl")).to_have_count(1)
+    run.ok("demo chat: HR user gets the salary band from the HR-only document, cited; citation opens the source")
+    page.select_option("#persona", "dana")
+    expect(page.locator("#who")).to_contain_text("user:dana")
+    page.fill("#prompt", "What is the level 3 salary band?")
+    page.click("#send")
+    expect(page.locator("#thread .msg.bot").last.locator(".meta")).to_contain_text("user:dana")
+    assert "77,000" not in page.locator("#thread .msg.bot").last.inner_text()
+    assert "compensation" not in page.inner_text("#sources")
+    run.ok("demo chat: engineering user asking the same question gets no HR passage")
+    page.check("#compare")
+    page.select_option("#persona", "priya")
+    page.select_option("#persona2", "dana")
+    page.fill("#prompt", "What is the level 3 salary band?")
+    page.click("#send")
+    cols = page.locator("#thread .msg.bot").last.locator(".compare > div")
+    expect(cols).to_have_count(2)
+    expect(cols.nth(0)).to_contain_text("$77,000")
+    assert "77,000" not in cols.nth(1).inner_text()
+    run.shot(page, "console", full=False)  # README image (docs/img/console.png)
+    page.uncheck("#compare")
+    run.ok("demo chat: side-by-side compare shows two different permission-aware answers")
+    page.select_option("#persona", "admin")
+    page.select_option("#mode", "bm25")
+    page.check("#rerank")
+    page.click('#suggest button[data-q="What is the hotel cap per night?"]')
+    expect(page.locator("#thread .msg.bot").last.locator(".meta")).to_contain_text("bm25 + lexical")
+    expect(page.locator("#sources .source").first).to_contain_text("sample-travel-expense-policy.md")
+    assert "vector" not in page.inner_text("#sources")  # BM25 mode doesn't embed the question
+    page.select_option("#mode", "hybrid")
+    page.uncheck("#rerank")
+    page.click('#suggest button[data-q="What is the hotel cap per night?"]')
+    expect(page.locator("#thread .msg.bot").last.locator(".meta")).to_contain_text("hybrid")
+    expect(page.locator("#sources .source").first).to_contain_text("rrf")
+    run.ok("demo chat: per-request retrieval switches (bm25 + lexical reranker, hybrid with RRF)")
+    page.select_option("#persona", "audrey")
+    page.select_option("#kind", "model")
+    page.fill("#prompt", "hello")
+    page.click("#send")
+    expect(page.locator("#thread .msg.bot").last).to_contain_text("403")
+    page.select_option("#kind", "rag")
+    run.ok("demo chat: collection reader can't use raw chat (403)")
+    run.shot(page, "demo-chat")
+
+    # 3. Documents: add, untrusted document, access list, matrix
+    goto(page, "documents")
+    page.fill("#addTitle", "parking-policy.md")
+    page.fill("#addText", "Parking\n\nEmployees park in garage B. Visitor parking needs a pass from reception.")
+    page.click("#addForm button[type=submit]")
+    expect(page.locator("#docTable")).to_contain_text("parking-policy.md")
+    page.fill("#addTitle", '<img id="xss" src="x">.md')
+    page.fill("#addText", "Markup in a title must render as text.")
+    page.click("#addForm button[type=submit]")
+    expect(page.locator("#docTable")).to_contain_text('<img id="xss" src="x">.md')
+    assert page.locator("#xss").count() == 0
+    page.once("dialog", lambda d: d.accept())
+    page.locator("#docTable tr", has_text="xss").locator('button[data-act="del"]').click()
+    expect(page.locator("#docTable")).not_to_contain_text("xss")
+    page.click("#poisonBtn")
+    expect(page.locator("#docTable")).to_contain_text("vendor-notes-UNTRUSTED.md")
+    run.ok("demo documents: pasted, HTML-titled (rendered as text) and untrusted documents added")
+    row = page.locator("#docTable tr", has_text="sample-travel-expense-policy.md")
+    row.locator('button[data-act="acl"]').click()
+    page.fill("#aclInput", "group:finance")
+    page.click("#aclForm button[type=submit]")
+    expect(page.locator("#docTable tr", has_text="sample-travel-expense-policy.md")).to_contain_text("group:finance")
+    kiosk = page.locator("#matrix tr", has_text="Lobby kiosk")
+    titles = page.locator("#matrix th.doc").all_inner_texts()
+    col = titles.index("sample-travel-expense-policy.md")
+    expect(kiosk.locator("td.cell").nth(col + 1)).to_have_attribute("aria-label", "cannot read")
+    run.ok("demo documents: access list edited; the access matrix hides the document from the kiosk key")
+    row = page.locator("#docTable tr", has_text="sample-travel-expense-policy.md")
+    row.locator('button[data-act="acl"]').click()
+    page.fill("#aclInput", "not-an-entry")
+    page.click("#aclForm button[type=submit]")
+    expect(page.locator("#aclErr")).to_contain_text("invalid access-list entry")
+    page.fill("#aclInput", "")
+    page.click("#aclForm button[type=submit]")
+    expect(page.locator("#docTable tr", has_text="sample-travel-expense-policy.md")).to_contain_text("inherits")
+    run.ok("demo documents: invalid access-list entry rejected by identity.check_acl; list cleared again")
+    run.shot(page, "demo-documents")
+    goto(page, "chat")
+    page.select_option("#persona", "admin")
+    page.click('#suggest button[data-q="What is the hotel cap per night?"]')
+    expect(page.locator("#sources")).to_contain_text("vendor-notes-UNTRUSTED.md")
+    expect(page.locator("#sources .pill.bad").first).to_contain_text("injection")
+    answer = page.locator("#thread .msg.bot").last.locator("[data-answer]").inner_text().lower()
+    assert "ignore all previous" not in answer and "admin key" not in answer, answer
+    expect(page.locator("#thread .msg.bot").last.locator(".banner.warn")).to_contain_text("prompt injection")
+    run.ok("demo chat: untrusted document retrieved, flagged, its instruction not repeated")
+
+    # 4. Users & Keys: create, burst over the limit, revoke
+    goto(page, "users")
+    page.fill("#keyLabel", "smoke-app")
+    page.fill("#keyGroups", "hr")
+    page.click("#keyForm button[type=submit]")
+    expect(page.locator("#newKeyValue")).to_contain_text("sk-local-")
+    expect(page.locator('#keysTable tr[data-label="smoke-app"]')).to_contain_text("group:hr")
+    run.ok("demo keys: key created with a group; value shown once")
+    page.locator('#keysTable tr[data-label="billing-app"] button[data-act="burst"]').click()
+    expect(page.locator("#sendLog .pill.warn").first).to_have_text("429")
+    statuses = page.locator("#sendLog .pill").all_inner_texts()
+    assert statuses.count("200") == 30 and statuses.count("429") == 2, statuses
+    run.ok("demo keys: burst of 32 at 30/min: 30 x 200, 2 x 429 (auth._rate_limit)")
+    page.once("dialog", lambda d: d.accept())
+    page.locator('#keysTable tr[data-label="billing-app"] button[data-act="revoke"]').click()
+    expect(page.locator('#keysTable tr[data-label="billing-app"] .pill.bad')).to_have_text("revoked")
+    run.ok("demo keys: key revoked")
+    run.shot(page, "demo-users")
+
+    # 5. Audit: verify, tamper, restore, timeline
+    goto(page, "audit")
+    page.click("#verifyBtn")
+    expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
+    page.select_option("#tamperLine", "2")
+    page.select_option("#tamperMode", "edit")
+    page.click("#tamperBtn")
+    expect(page.locator("#verifyOut")).to_contain_text("Tampering detected at line 2")
+    page.click("#restoreBtn")
+    expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
+    page.select_option("#tamperLine", "2")
+    page.select_option("#tamperMode", "edit_rehash")
+    page.click("#tamperBtn")
+    expect(page.locator("#verifyOut")).to_contain_text("Tampering detected at line 3")
+    page.click("#restoreBtn")
+    expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
+    run.ok("demo audit: edit at line 2 -> line 2; edit + rehash -> caught at line 3; restore -> intact")
+    events = page.locator("#auditBody td:nth-child(3)").all_inner_texts()
+    assert {"document_question", "key_revoked", "document_acl_changed", "completion"} <= set(events), set(events)
+    assert "access=" in page.inner_text("#auditBody")
+    page.select_option("#fEvent", "document_question")
+    page.fill("#fSearch", "priya")
+    expect(page.locator("#auditCount")).not_to_contain_text("0 of")
+    page.locator("#auditBody tr").first.click()
+    expect(page.locator("#drawer")).to_have_class(re.compile("open"))
+    expect(page.locator("#drawerBody")).to_contain_text("Access decision")
+    expect(page.locator("#drawerBody")).to_contain_text("Hash chain")
+    expect(page.locator("#drawerBody")).to_contain_text("restricted-hr-compensation-bands.md")
+    page.wait_for_timeout(350)  # drawer slide-in
+    run.shot(page, "demo-audit-drawer", full=False)
+    page.click("#drawerClose")
+    run.ok("demo audit: filters and search; row opens a decision timeline with cited documents and hashes")
+
+    # 6. Models: pin, re-pull, enforce, ML-BOM, lock validation
+    goto(page, "models")
+    page.click("#pinBtn")
+    expect(page.locator("#scStatus")).to_have_text("Verified")
+    page.click("#repullBtn")
+    expect(page.locator('#modelTable tr[data-model="llama3.1:8b"]')).to_contain_text("mismatch")
+    page.click('#policySeg [data-pol="enforce"]')
+    expect(page.locator('#policySeg [data-pol="enforce"]')).to_have_attribute("aria-pressed", "true")
+    page.click("#tryModel")
+    expect(page.locator("#tryOut")).to_contain_text("403")
+    page.click('#policySeg [data-pol="warn"]')
+    expect(page.locator('#policySeg [data-pol="warn"]')).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#mo")).to_contain_text("machine-learning-model")
+    page.fill("#lockText", '{"version": 1, "models": [{"name": "x", "digest": "sha256:nothex"}]}')
+    page.click("#lockValidate")
+    expect(page.locator("#lockOut")).to_contain_text("digest must be a SHA-256 hex string")
+    run.ok("demo models: pin -> verified; re-pull -> mismatch; enforce -> 403; ML-BOM; lock validation error")
+    run.shot(page, "demo-models")
+
+    # 7. Policies: invalid policy, apply, scenario before/after
+    goto(page, "policies")
+    page.select_option("#scSel", "audrey-chat")
+    page.click("#scRun")
+    expect(page.locator("#scBefore")).to_contain_text("403")
+    original = page.input_value("#polText")
+    page.fill("#polText", original.replace('"auditors": ["reader:policies"]', '"auditors": ["superuser"]'))
+    page.click("#polValidate")
+    expect(page.locator("#polErrList")).to_contain_text("unknown role 'superuser'")
+    granted = '"auditors": ["reader:policies", "user"]'
+    page.fill("#polText", original.replace('"auditors": ["reader:policies"]', granted))
+    page.click("#polApply")
+    expect(page.locator("#polOk")).to_contain_text("GATEWAY_OIDC_GROUP_ROLES")
+    expect(page.locator("#scAfter")).to_contain_text("200")
+    run.ok("demo policies: bad role rejected inline; applied mapping turns the auditor's 403 into 200")
+    run.shot(page, "demo-policies")
+    page.fill("#polText", original)
+    page.click("#polApply")
+    expect(page.locator("#polOk")).to_be_visible()
+
+    # 8. Evals
+    goto(page, "evals")
+    expect(page.locator("#gate")).to_have_text("Pass")
+    assert page.locator("#scorecard tbody tr").count() == 4
+    page.click('#scorecard tr[data-config="bm25+none"]')
+    expect(page.locator("#view")).to_contain_text("Misses · bm25+none")
+    page.click("#runEval")
+    expect(page.locator("#evalMatch")).to_contain_text("Identical", timeout=180_000)
+    run.ok("demo evals: gate passes; scripts/rag_eval.py re-run in the browser matches the committed results")
+    run.shot(page, "demo-evals")
+
+    # 9. Settings
+    goto(page, "settings")
+    assert page.locator(".modules .module").count() >= 15
+    expect(page.locator("#view")).to_contain_text("What is simulated")
+    run.ok("demo settings: modules running in the tab listed with hashes; simulated parts listed")
+
+    # Back button and deep links
+    page.go_back()
+    page.wait_for_selector('#view > [data-screen="evals"][data-loaded="true"]')
+    run.ok("demo: browser back returns to the previous screen")
+
+    mobile_pass(run, page, "demo")
+    browser.close()
+    httpd.shutdown()
+
+
+# ------------------------------------------------------------------------------------------------
+# Live mode
+# ------------------------------------------------------------------------------------------------
+
+
+def _wait_http(url: str, proc: subprocess.Popen, timeout: float = 30) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"process exited: {proc.args}")
+        try:
+            with urllib.request.urlopen(url, timeout=2):
+                return
+        except OSError:
+            time.sleep(0.3)
+    raise RuntimeError(f"timed out waiting for {url}")
+
+
+def live(run: Run, p) -> None:
+    from playwright.sync_api import expect
+
+    mock_port, gw_port = free_port(), free_port()
+    admin_key = "sk-local-" + secrets.token_urlsafe(24)
+    tmp = tempfile.mkdtemp(prefix="plp-live-")
+    env = {
+        **os.environ,
+        "MOCK_MODE": "simulated",
+        "BACKEND": "openai_compatible",
+        "OPENAI_COMPAT_BASE_URL": f"http://127.0.0.1:{mock_port}/v1",
+        "GATEWAY_DEFAULT_MODEL": "mock-model",
+        "GATEWAY_EMBED_MODEL": "mock-embed",
+        "GATEWAY_DB_PATH": f"{tmp}/gateway.db",
+        "GATEWAY_LOG_DIR": f"{tmp}/logs",
+        "GATEWAY_ADMIN_BOOTSTRAP_KEY": admin_key,
+    }
+    uv = [sys.executable, "-m", "uvicorn", "--host", "127.0.0.1", "--log-level", "warning"]
+    procs = [
+        subprocess.Popen([*uv, "--port", str(mock_port), "scripts.mock_openai_server:app"], cwd=ROOT, env=env),
+        subprocess.Popen([*uv, "--port", str(gw_port), "gateway.main:app"], cwd=ROOT, env=env),
+    ]
+    try:
+        _wait_http(f"http://127.0.0.1:{mock_port}/v1/models", procs[0])
+        _wait_http(f"http://127.0.0.1:{gw_port}/health", procs[1])
+        run.ok("live: mock backend (simulated mode) and gateway started with uvicorn")
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1366, "height": 900})
+        run.watch(page)
+        page.goto(f"http://127.0.0.1:{gw_port}/console/?tour=0")
+        page.wait_for_function("document.body.dataset.ready", timeout=60_000)
+        assert page.evaluate("document.body.dataset.ready") == "true"
+        expect(page.locator("#modeBadge")).to_contain_text("Live")
+        expect(page.locator("#modeBadge")).to_have_class(re.compile("live"))
+        page.wait_for_selector('#view > [data-screen="settings"][data-loaded="true"]')
+        run.ok("live: /console served by the gateway, detected live mode, asks for a credential")
+        page.fill("#cred", admin_key)
+        page.click("#credForm button[type=submit]")
+        expect(page.locator("#credOk")).to_contain_text("bootstrap admin")
+        run.ok("live settings: signed in with the admin key (GET /v1/me)")
+
+        goto(page, "overview")
+        page.click("#seedBtn")
+        expect(page.locator('[data-kpi="documents"]')).to_have_text("5")
+        expect(page.locator('[data-kpi="chain"]')).to_have_text("Intact")
+        run.ok("live overview: sample documents and keys loaded through the API; counters from /admin/overview")
+        run.shot(page, "live-overview")
+
+        goto(page, "chat")
+        page.select_option("#persona", label="hr-assistant")
+        expect(page.locator("#who")).to_contain_text("hr-assistant")
+        page.click('#suggest button[data-q="What is the level 3 salary band?"]')
+        last = page.locator("#thread .msg.bot").last
+        expect(last.locator(".answer")).to_contain_text("77,000")
+        expect(page.locator("#sources .source").first).to_contain_text("restricted-hr-compensation-bands.md")
+        expect(last.locator(".meta")).to_contain_text("audit line")
+        expect(last.locator(".meta")).to_contain_text("allow")
+        run.ok("live chat: key with group hr gets the HR document through the gateway and mock backend, cited")
+        page.select_option("#persona", label="eng-assistant")
+        page.fill("#prompt", "What is the level 3 salary band?")
+        page.click("#send")
+        expect(page.locator("#thread .msg.bot").last.locator(".meta")).to_contain_text("eng-assistant")
+        assert "77,000" not in page.locator("#thread .msg.bot").last.inner_text()
+        run.ok("live chat: engineering key asking the same question gets no HR passage")
+        run.shot(page, "live-chat")
+
+        goto(page, "audit")
+        page.click("#verifyBtn")
+        expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
+        assert "document_question" in page.inner_text("#auditBody")
+        assert page.locator("#tamperBtn").count() == 0  # live mode never edits the log
+        page.select_option("#fEvent", "document_question")
+        page.locator("#auditBody tr").first.click()
+        expect(page.locator("#drawerBody")).to_contain_text("Access decision")
+        expect(page.locator("#drawerBody")).to_contain_text("not logged")
+        page.click("#drawerClose")
+        run.ok("live audit: chain verified, questions listed, decision timeline opens; no tamper controls")
+        run.shot(page, "live-audit")
+
+        for s in ("documents", "users", "models", "policies", "evals", "settings"):
+            goto(page, s)
+            assert page.locator("#view .error-state").count() == 0, f"live {s}: {page.inner_text('#view')[:300]}"
+        expect(page.locator("#view")).to_contain_text("Credential")
+        run.ok("live: documents, users, models, policies, evals and settings render without errors")
+        mobile_pass(run, page, "live")
+        browser.close()
+    finally:
+        for proc in procs:
+            proc.terminate()
+            proc.wait(timeout=10)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--pyodide-dir", type=Path, default=None, help="serve Pyodide from a local release folder")
     ap.add_argument("--screenshots", type=Path, default=None, help="folder for desktop/mobile screenshots")
+    ap.add_argument("--live", action="store_true", help="also run the live-mode smoke (gateway + mock backend)")
+    ap.add_argument("--skip-demo", action="store_true", help="skip the demo-mode (Pyodide) smoke")
     args = ap.parse_args(argv)
 
-    from playwright.sync_api import expect, sync_playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("playwright is not installed; skipping (pip install playwright && playwright install chromium)")
+        return 0
 
-    httpd = serve(args.port)
-    url = f"http://127.0.0.1:{args.port}/demo/"
-    errors: list[str] = []
-    checks: list[str] = []
-
-    def ok(msg: str) -> None:
-        checks.append(msg)
-        print(f"  ok  {msg}")
-
+    run = Run(args.screenshots)
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1366, "height": 900})
-        page.on("console", lambda m: m.type == "error" and errors.append(m.text))
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        if args.pyodide_dir:
-            local = args.pyodide_dir.resolve()
+        if not args.skip_demo:
+            demo(run, p, args.port, args.pyodide_dir)
+        if args.live:
+            live(run, p)
 
-            def fulfill(route):
-                name = route.request.url.split(CDN, 1)[1].split("?", 1)[0]
-                f = local / name
-                if f.is_file():
-                    ctype = "application/wasm" if name.endswith(".wasm") else None
-                    route.fulfill(path=str(f), content_type=ctype, headers={"Access-Control-Allow-Origin": "*"})
-                else:
-                    route.fulfill(status=404, body=f"not in local pyodide dir: {name}")
-
-            page.route(f"{CDN}**", fulfill)
-
-        page.goto(url)
-        page.wait_for_function("document.body.dataset.ready", timeout=180_000)
-        if page.evaluate("document.body.dataset.ready") != "true":
-            print("demo failed to start:", page.inner_text("#loaderNote"))
-            return 1
-        ok("Pyodide loaded, gateway modules fetched, engine started, samples ingested")
-        modules = page.locator("#modules .module").all_inner_texts()
-        assert any("gateway/auth.py" in m for m in modules) and any("gateway/rag.py" in m for m in modules)
-        ok(f"{len(modules)} gateway modules listed with line counts and hashes")
-
-        # 1. keys: burst over the limit, then revoke
-        row = page.locator('#keysBody tr[data-label="billing-app"]')
-        row.locator('button[data-act="burst"]').click()
-        expect(page.locator("#respLog .pill")).to_have_count(12)
-        statuses = page.locator("#respLog .pill").all_inner_texts()
-        assert statuses.count("200") == 10 and statuses.count("429") == 2, statuses
-        ok("burst of 12 at 10/min: 10 x 200, 2 x 429")
-        expect(row.locator("td.num").first).to_have_text("10")
-        row.locator('button[data-act="revoke"]').click()
-        expect(row.locator(".pill.bad")).to_have_text("revoked")
-        row.locator('button[data-act="send"]').click()
-        expect(page.locator("#respLog > div").first).to_contain_text("invalid or revoked key")
-        ok("revoked key gets 401")
-
-        # 2. redaction
-        page.click("#redactBtn")
-        expect(page.locator("#redactOut")).to_contain_text("[REDACTED_SSN]")
-        out = page.inner_text("#redactOut")
-        assert "[REDACTED_SSN]" in out and "[REDACTED_PAN]" in out and "[REDACTED_PHONE]" in out, out
-        assert "1234 5678 9012 3456" in out and "123-45-6789" not in out
-        ok("redaction: SSN, card, phone, email, DOB masked; Luhn-invalid number kept")
-
-        # 3. audit: verify, tamper, detect, restore
-        page.click("#verifyBtn")
-        expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
-        page.select_option("#tamperLine", "2")
-        page.select_option("#tamperMode", "edit")
-        page.click("#tamperBtn")
-        expect(page.locator("#verifyOut")).to_contain_text("Tampering detected at line 2")
-        ok("edited audit line 2 -> verify reports line 2")
-        page.click("#restoreBtn")
-        expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
-        page.select_option("#tamperLine", "2")
-        page.select_option("#tamperMode", "edit_rehash")
-        page.click("#tamperBtn")
-        expect(page.locator("#verifyOut")).to_contain_text("Tampering detected at line 3")
-        ok("edit + recomputed hash on line 2 -> caught at line 3")
-        page.click("#restoreBtn")
-        expect(page.locator("#verifyOut")).to_contain_text("Chain intact")
-        events = page.locator("#auditBody td:nth-child(3)").all_inner_texts()
-        assert "completion" in events and "key_revoked" in events, events
-        ok("audit shows completion (redacted prompt) and key_revoked entries")
-
-        # 4. document Q&A
-        page.click('#suggest button[data-q="What is the hotel cap per night?"]')
-        expect(page.locator("#answerBox .answer")).to_contain_text("$180 per night")
-        first = page.locator("#sources .source").first
-        expect(first).to_contain_text("sample-travel-expense-policy.md")
-        expect(first.locator(".pill.ok")).to_have_text("cited")
-        page.locator("#answerBox .cite").first.click()
-        ok("question answered from the travel policy with a [1] citation")
-        expect(first).to_contain_text("RRF")
-        page.select_option("#retrievalMode", "bm25")
-        expect(page.locator("#answerBox .answer")).to_contain_text("retrieval bm25")
-        expect(page.locator("#sources .source").first).to_contain_text("sample-travel-expense-policy.md")
-        assert "cosine" not in page.inner_text("#sources")  # BM25 mode doesn't embed the question
-        page.check("#rerankLexical")
-        expect(page.locator("#answerBox .answer")).to_contain_text("lexical reranker")
-        expect(page.locator("#sources .source").first).to_contain_text("rerank")
-        page.uncheck("#rerankLexical")
-        page.select_option("#retrievalMode", "hybrid")
-        expect(page.locator("#answerBox .answer")).to_contain_text("retrieval hybrid")
-        ok("retrieval switches: hybrid (cosine + BM25 + RRF), BM25 only, lexical reranker")
-        page.click("#poisonBtn")
-        expect(page.locator("#sources")).to_contain_text("vendor-notes-UNTRUSTED.md")
-        expect(page.locator("#sources .pill.bad").first).to_contain_text("injection")
-        # Only the extracted answer must not repeat the injected instruction; the explanation
-        # banner below it quotes the instruction on purpose.
-        answer = page.inner_text("#answerBox .answer")
-        assert "ignore all previous" not in answer.lower() and "admin key" not in answer.lower(), answer
-        expect(page.locator("#answerBox .banner.warn")).to_contain_text("don't make")
-        ok("poisoned document retrieved, flagged, its instruction not repeated, limitation explained")
-
-        # 5. identity and permission-aware retrieval
-        page.click('#personas button[data-persona="priya"]')
-        expect(page.locator("#whoBox")).to_contain_text("user:priya")
-        page.click('#idSuggest button[data-q="What is the level 3 salary band?"]')
-        expect(page.locator("#idAnswer .answer")).to_contain_text("$77,000")
-        first = page.locator("#idSources .source").first
-        expect(first).to_contain_text("restricted-hr-compensation-bands.md")
-        expect(first.locator(".pill.ok")).to_have_text("cited")
-        ok("HR user (SSO, group hr) gets the salary band from the HR-only document, cited")
-        page.click('#personas button[data-persona="dana"]')
-        expect(page.locator("#whoBox")).to_contain_text("user:dana")
-        page.click("#idAsk")
-        expect(page.locator("#idAnswer .answer")).to_contain_text("Asked as user:dana")
-        assert "77,000" not in page.inner_text("#idAnswer") + page.inner_text("#idSources")
-        assert "compensation" not in page.inner_text("#idSources")
-        ok("engineering user asking the same question: no HR passage in answer or sources")
-        page.click('#idSuggest button[data-q="How fast must the payments on-call engineer acknowledge a page?"]')
-        expect(page.locator("#idSources .source").first).to_contain_text("restricted-payments-oncall-runbook.md")
-        ok("engineering user gets the engineering-only runbook")
-        page.click('#personas button[data-persona="audrey"]')
-        expect(page.locator("#whoBox")).to_contain_text("reader:policies")
-        page.click("#idChat")
-        expect(page.locator("#idAnswer")).to_contain_text("403")
-        ok("collection reader can't use raw chat (403)")
-        events = page.locator("#auditBody").inner_text()
-        assert "access=" in events, events[:400]
-        ok("audit entries record the access decision")
-
-        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
-        if args.screenshots:
-            args.screenshots.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(args.screenshots / "demo-desktop.png"), full_page=True)
-
-        page.set_viewport_size({"width": 390, "height": 844})
-        page.wait_for_timeout(300)
-        overflow = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
-        assert overflow <= 0, f"horizontal scroll at 390px: {overflow}px"
-        ok("no horizontal page scroll at 390 px")
-        if args.screenshots:
-            page.screenshot(path=str(args.screenshots / "demo-mobile.png"), full_page=True)
-        browser.close()
-
-    httpd.shutdown()
-    real_errors = [e for e in errors if not re.search(r"favicon", e)]
+    real_errors = [e for e in run.errors if not re.search(r"favicon", e)]
     if real_errors:
         print("console errors:", *real_errors, sep="\n  ")
         return 1
-    print(f"\n{len(checks)} checks passed")
+    print(f"\n{len(run.checks)} checks passed")
     return 0
 
 
