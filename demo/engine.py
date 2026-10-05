@@ -13,6 +13,9 @@ What is real: the gateway's own modules, imported unmodified from ../gateway/:
              retrieval, prompt building, citation parsing, injection flags
   retrieval.py BM25, vector ranking, Reciprocal Rank Fusion, lexical reranker
   backends.py  the pluggable backend interface (a demo backend is plugged in)
+  console.py   overview counters, audit rows, access matrix, runtime policy validation
+  supply_chain.py  lock-file parsing, verification statuses and the off/warn/enforce policy
+  scripts/mlbom.py, scripts/rag_eval.py  ML-BOM model components and the RAG eval (when fetched)
 
 What is demo-only (this file):
   - The glue that main.py's FastAPI routes normally provide (mirrored closely).
@@ -24,16 +27,21 @@ What is demo-only (this file):
   - Personas. Token (OIDC) personas are built from claims with the gateway's own
     identity.principal_for_claims(); the JWT signature check (PyJWT) is server-only
     and does not run here. Key personas are real API keys with groups.
+  - SimulatedModelServer: a stand-in Ollama model inventory for the Models screen.
+    Its digests are SHA-256 of a fixed string, not real model digests; verification,
+    pinning and the policy decision run the gateway's supply_chain.py against it.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 import shutil
 import sys
+import time
 import types
 from collections import Counter
 from pathlib import Path
@@ -44,8 +52,10 @@ except ImportError:  # pragma: no cover - imported as demo.engine under CPython
     from demo import shims
 
 STUBBED = shims.install()
+if sys.platform == "emscripten":  # keep gateway warnings (e.g. model policy) out of the browser console
+    logging.getLogger("gateway").addHandler(logging.NullHandler())
 
-from gateway import audit, auth, backends, identity, rag, store  # noqa: E402
+from gateway import audit, auth, backends, console, identity, rag, store, supply_chain  # noqa: E402
 from gateway.config import settings  # noqa: E402
 from gateway.logging_setup import log_prompt  # noqa: E402
 from gateway.redact import redact  # noqa: E402
@@ -165,6 +175,47 @@ class DemoBackend:
         raise backends.BackendNotSupported("no model downloads in the demo")
 
 
+class SimulatedModelServer:
+    """A stand-in for Ollama's model inventory (/api/tags): names, digests, details. Simulated.
+
+    `name` is "ollama" so supply_chain.verify() checks the lock file's Ollama pins against it.
+    """
+
+    name = "ollama"
+    supports_pull = False
+
+    def __init__(self):
+        self.revisions = {"llama3.1:8b": 1, "nomic-embed-text:latest": 1}
+        self.details = {
+            "llama3.1:8b": {"family": "llama", "parameter_size": "8.0B", "quantization_level": "Q4_K_M"},
+            "nomic-embed-text:latest": {"family": "nomic-bert", "parameter_size": "137M", "quantization_level": "F16"},
+        }
+
+    def digest(self, name: str) -> str:
+        return hashlib.sha256(f"simulated:{name}:rev{self.revisions[name]}".encode()).hexdigest()
+
+    async def model_inventory(self) -> dict:
+        return {n: {"digest": self.digest(n), "details": self.details[n]} for n in self.revisions}
+
+    async def list_models(self) -> list[str]:
+        return list(self.revisions)
+
+
+# Source, license and purpose for the simulated models, as in models.lock.example.json.
+MODEL_METADATA = {
+    "llama3.1:8b": {
+        "source": "https://ollama.com/library/llama3.1",
+        "license": "Llama 3.1 Community License",
+        "purpose": "text-generation",
+    },
+    "nomic-embed-text:latest": {
+        "source": "https://ollama.com/library/nomic-embed-text",
+        "license": "Apache-2.0",
+        "purpose": "embedding",
+    },
+}
+
+
 DEMO_ISSUER = "https://idp.demo.invalid"
 GROUP_ROLES = {"staff": ["user"], "auditors": ["reader:policies"]}
 PERSONAS = {
@@ -200,7 +251,7 @@ def _request():
 
 
 class DemoEngine:
-    def __init__(self, workdir: str = "/tmp/lldk-demo", rate_limit: int = 10):
+    def __init__(self, workdir: str = "/tmp/plp-demo", rate_limit: int = 30):
         self.workdir = Path(workdir)
         self.rate_limit = rate_limit
         self._backup: str | None = None
@@ -224,8 +275,13 @@ class DemoEngine:
         settings.GATEWAY_COLLECTION_DEFAULT_ACCESS = "open"
         settings.GATEWAY_RETRIEVAL_MODE = "hybrid"
         settings.GATEWAY_RERANKER = "none"
+        settings.GATEWAY_RRF_K = 60
+        settings.GATEWAY_MODEL_POLICY = "warn"
+        settings.GATEWAY_MODEL_LOCK_FILE = ""
         backends.set_backend(DemoBackend())
         auth._calls.clear()
+        supply_chain.reset()
+        self.model_server = SimulatedModelServer()
         self._backup = None
         store.init_db()
         rag.init_rag()
@@ -265,12 +321,28 @@ class DemoEngine:
                 "masked": _mask(k.key),
                 "label": k.label,
                 "is_admin": k.is_admin,
+                "groups": k.groups,
+                "created_at": k.created_at,
+                "revoked_at": k.revoked_at,
                 "revoked": bool(k.revoked_at),
                 "requests_total": k.requests_total,
                 "tokens_total": k.tokens_total,
             }
             for k in store.list_keys()
         ]
+
+    def users(self) -> list[dict]:  # mirrors GET /admin/users
+        return store.list_principal_usage()
+
+    def rate_limits(self) -> dict:  # mirrors GET /admin/rate-limits
+        now = time.monotonic()
+        keys = []
+        for k in store.list_keys():
+            if k.revoked_at:
+                continue
+            window = [t for t in auth._calls.get(k.key, ()) if t >= now - auth._WINDOW_SEC]
+            keys.append({"label": k.label, "key": _mask(k.key), "in_window": len(window)})
+        return {"limit_per_min": settings.GATEWAY_RATE_LIMIT_PER_MIN, "window_seconds": 60, "keys": keys}
 
     def create_key(self, label: str, is_admin: bool = False, groups: list[str] | None = None) -> dict:
         label = (label or "").strip()[:60] or "app"
@@ -290,9 +362,28 @@ class DemoEngine:
     # ---------- identity (mirrors /v1/me and the auth dependencies) ----------
 
     def personas(self) -> list[dict]:
-        return [{"id": pid, "name": p["name"], "kind": p["kind"], "note": p["note"]} for pid, p in PERSONAS.items()]
+        """The built-in personas, then every other active API key (created on the Users & Keys screen)."""
+        out = [{"id": pid, "name": p["name"], "kind": p["kind"], "note": p["note"]} for pid, p in PERSONAS.items()]
+        bound = set(self._persona_keys.values())
+        for k in store.list_keys():
+            if k.revoked_at or k.key in bound:
+                continue
+            groups = ", ".join(k.groups) or "no groups"
+            role = "admin" if k.is_admin else "user"
+            note = f"API key, {role}, {groups}"
+            out.append({"id": f"key:{k.label}:{k.key[-6:]}", "name": k.label, "kind": "api_key", "note": note})
+        return out
 
     async def _principal(self, persona: str):
+        if persona.startswith("key:"):
+            suffix = persona.rsplit(":", 1)[1]
+            rec = next((k for k in store.list_keys() if k.key.endswith(suffix) and not k.revoked_at), None)
+            if rec is None:
+                raise RuntimeError("that API key was revoked or doesn't exist")
+            p, err = await self._authenticate(rec.key)
+            if err:
+                raise HTTPException(err["status"], err["detail"])
+            return p
         spec = PERSONAS[persona]
         if spec["kind"] == "oidc":
             # Claims as a verified token would carry them; the role mapping below is the gateway's own code.
@@ -301,11 +392,14 @@ class DemoEngine:
             self._persona_keys[persona] = self.create_key(spec["label"])["key"]
         rec, err = await self._authenticate(self._persona_keys[persona])
         if err:
-            raise RuntimeError(err["detail"])
+            raise HTTPException(err["status"], err["detail"])
         return rec
 
     async def whoami(self, persona: str, collection: str = "policies") -> dict:
-        p = await self._principal(persona)
+        try:
+            p = await self._principal(persona)
+        except HTTPException as e:
+            return {"status": e.status_code, "detail": e.detail}
         access = rag.access_for(p, collection)
         visible = rag.list_documents(collection, access)
         return {
@@ -436,34 +530,70 @@ class DemoEngine:
             return err
         return await self._answer(rec, collection, question, top_k)
 
-    async def ask_as(self, persona: str, collection: str, question: str, top_k: int = 4) -> dict:
-        return await self._answer(await self._principal(persona), collection, question, top_k)
+    async def ask_as(
+        self,
+        persona: str,
+        collection: str,
+        question: str,
+        top_k: int = 4,
+        mode: str | None = None,
+        reranker: str | None = None,
+    ) -> dict:
+        try:
+            principal = await self._principal(persona)
+        except RuntimeError as e:
+            return {"status": 401, "detail": str(e)}
+        except HTTPException as e:  # rate limit on a key persona
+            return {"status": e.status_code, "detail": e.detail}
+        return await self._answer(principal, collection, question, top_k, mode, reranker)
 
     async def chat_as(self, persona: str, prompt: str) -> dict:
         """Raw chat needs the user role (auth.require_user); collection readers get 403."""
-        p = await self._principal(persona)
+        try:
+            p = await self._principal(persona)
+        except RuntimeError as e:
+            return {"status": 401, "detail": str(e)}
+        except HTTPException as e:
+            return {"status": e.status_code, "detail": e.detail}
         if not p.is_user:
             return {"status": 403, "detail": "the user role is required"}
         params = backends.ChatParams(model=DEMO_MODEL, messages=[{"role": "user", "content": prompt}])
         result = await backends.get_backend().chat(params)
-        return {"status": 200, "content": result.content}
+        total = result.prompt_tokens + result.completion_tokens
+        store.record_principal_usage(p, total)
+        log_prompt(p.label, DEMO_MODEL, json.dumps(params.messages), result.content, total)
+        return {"status": 200, "content": result.content, "total_tokens": total, "model": DEMO_MODEL}
 
-    async def _answer(self, rec, collection: str, question: str, top_k: int) -> dict:
+    async def _answer(
+        self, rec, collection: str, question: str, top_k: int, mode: str | None = None, reranker: str | None = None
+    ) -> dict:
+        started = time.perf_counter()
         try:
+            config = rag.retrieval_config(mode or None, reranker or None)
             access = rag.access_for(rec, collection)
         except rag.RagError as e:
             return {"status": 400, "detail": str(e)}
+        t_access = time.perf_counter()
         if not access.doc_ids:
             if access.hidden:
                 audit.append(
                     "document_question_denied", {"key": rec.label, "collection": collection, "access": access.audit()}
                 )
             return {"status": 404, "detail": f"collection {collection!r} has no documents yet"}
-        sources = await rag.retrieve(collection, question, top_k, access)
+        sources = await rag.retrieve(
+            collection, question, top_k, access, mode=config["mode"], reranker=config["reranker"]
+        )
         if not sources:
             return {"status": 404, "detail": f"collection {collection!r} has no documents yet"}
+        t_retrieval = time.perf_counter()
         params = backends.ChatParams(model=DEMO_MODEL, messages=rag.build_messages(question, sources), temperature=0.1)
         result = await backends.get_backend().chat(params)
+        t_generation = time.perf_counter()
+        timings = {
+            "access": round((t_access - started) * 1000, 2),
+            "retrieval": round((t_retrieval - t_access) * 1000, 2),
+            "generation": round((t_generation - t_retrieval) * 1000, 2),
+        }
         tokens = result.prompt_tokens + result.completion_tokens
         store.record_principal_usage(rec, tokens)
         cited = rag.cited_numbers(result.content)
@@ -472,7 +602,7 @@ class DemoEngine:
             "key": rec.label,
             "collection": collection,
             "model": DEMO_MODEL,
-            "retrieval": rag.retrieval_config(),
+            "retrieval": config,
             "access": access.audit(),
             "sources": [
                 {
@@ -486,6 +616,7 @@ class DemoEngine:
                 for s in sources
             ],
             "tokens": tokens,
+            "timings_ms": timings,
             "question": redact(question)[0],
             "answer": redact(result.content)[0],
         }
@@ -510,9 +641,218 @@ class DemoEngine:
             ],
             "system_prompt": rag.SYSTEM_PROMPT,
             "access": access.audit(),
-            "retrieval": rag.retrieval_config(),
+            "retrieval": config,
+            "timings_ms": timings,
+            "usage": {"total_tokens": tokens},
             "asked_as": rec.label,
         }
+
+    # ---------- console views (mirror /admin/overview, /admin/audit/entries, /admin/access-matrix) ----------
+
+    def overview(self) -> dict:
+        out = console.overview()
+        out["version"] = VERSION
+        out["backend"] = {"name": "demo", "default_model": DEMO_MODEL, "embed_model": DEMO_EMBED_MODEL}
+        return out
+
+    def audit_entries(self, limit: int = 200) -> dict:
+        rows = console.audit_rows(limit=min(max(int(limit), 1), 2000))[::-1]
+        for row in rows:
+            row["summary"] = console.summarize_entry(row)
+        return {"verify": audit.verify(), "entries": rows}
+
+    def _persona_principal(self, persona: str):
+        """A persona's principal without authenticating (no rate-limit hit): for the access matrix."""
+        spec = PERSONAS[persona]
+        if spec["kind"] == "oidc":
+            return identity.principal_for_claims({"iss": DEMO_ISSUER, "aud": "llm-gateway", **spec["claims"]})
+        if persona not in self._persona_keys:
+            self._persona_keys[persona] = self.create_key(spec["label"])["key"]
+        rec = store.get_active_key(self._persona_keys[persona])
+        return identity.principal_for_key(rec) if rec else None  # None: the persona's key was revoked
+
+    def access_matrix(self, collection: str = "policies") -> dict:
+        principals, names = [], {}
+        for pid, spec in PERSONAS.items():
+            p = self._persona_principal(pid)
+            if p is None:
+                continue
+            principals.append(p)
+            names[p.label] = spec["name"]
+        bound = set(self._persona_keys.values())
+        for k in store.list_keys():
+            if not k.revoked_at and k.key not in bound:
+                principals.append(identity.principal_for_key(k))
+        try:
+            out = console.access_matrix(collection, principals)
+        except rag.RagError as e:
+            return {"status": 400, "detail": str(e)}
+        for row in out["rows"]:
+            row["persona"] = names.get(row["label"], "")
+        return out
+
+    def collections(self) -> list[dict]:  # the admin's view: every collection, with its access list
+        out = rag.list_collections(None)
+        for c in out:
+            c["acl"] = rag.collection_acl(c["name"])
+        return out
+
+    def get_collection_acl(self, collection: str) -> dict:
+        return {"collection": collection, "principals": rag.collection_acl(collection)}
+
+    def set_collection_acl(self, collection: str, principals: list[str]) -> dict:
+        try:
+            before, after = rag.set_collection_acl(collection, principals, "bootstrap admin", _now())
+        except rag.RagError as e:
+            return {"status": 400, "detail": str(e)}
+        change = {"collection": collection, "before": before, "after": after, "by": "bootstrap admin"}
+        audit.append("collection_acl_changed", change)
+        return {"status": 200, "collection": collection, "principals": after}
+
+    def set_document_acl(self, collection: str, doc_id: str, principals: list[str]) -> dict:
+        try:
+            changed = rag.set_document_acl(collection, doc_id, principals)
+        except rag.RagError as e:
+            return {"status": 400, "detail": str(e)}
+        if changed is None:
+            return {"status": 404, "detail": "no such document in this collection"}
+        before, after = changed
+        audit.append(
+            "document_acl_changed",
+            {"collection": collection, "doc_id": doc_id, "before": before, "after": after, "by": "bootstrap admin"},
+        )
+        return {"status": 200, "collection": collection, "doc_id": doc_id, "acl": after}
+
+    # ---------- runtime policy (mirrors /admin/policy) ----------
+
+    def policy(self) -> dict:
+        return {"policy": console.current_policy(), "fields": console.POLICY_FIELDS, "persisted": False}
+
+    def validate_policy(self, doc) -> dict:
+        try:
+            return {"ok": True, "policy": console.validate_policy(doc), "errors": []}
+        except console.PolicyError as e:
+            return {"ok": False, "policy": None, "errors": e.errors}
+
+    def apply_policy(self, doc) -> dict:
+        try:
+            before, after = console.apply_policy(doc)
+        except console.PolicyError as e:
+            return {"status": 422, "detail": e.errors}
+        if after:
+            audit.append("policy_changed", {"before": before, "after": after, "by": "bootstrap admin"})
+        self.rate_limit = settings.GATEWAY_RATE_LIMIT_PER_MIN
+        return {"status": 200, "policy": console.current_policy(), "changed": after, "persisted": False}
+
+    # ---------- models and supply chain (mirrors /admin/models/*, against SimulatedModelServer) ----------
+
+    def _lock_path(self) -> Path:
+        return self.workdir / "models.lock.json"
+
+    async def models(self) -> dict:
+        lock_text = self._lock_path().read_text() if self._lock_path().exists() else ""
+        verification = supply_chain.last_result() or await self.verify_models()
+        return {
+            "backend": {"name": "demo", "chat_model": DEMO_MODEL, "embed_model": DEMO_EMBED_MODEL, "healthy": True},
+            "inventory": await self.model_server.model_inventory(),
+            "lock_text": lock_text,
+            "policy": settings.GATEWAY_MODEL_POLICY,
+            "verification": verification,
+        }
+
+    async def verify_models(self, trigger: str = "admin") -> dict:
+        try:
+            pins = supply_chain.load_lock()
+        except supply_chain.LockError as e:
+            return {"ok": False, "error": str(e), "models": {}, "checked_at": time.time(), "backend": "ollama"}
+        result = await supply_chain.verify(self.model_server, pins)
+        counts: dict[str, int] = {}
+        for m in result["models"].values():
+            counts[m["status"]] = counts.get(m["status"], 0) + 1
+        audit.append(
+            "model_verification",
+            {
+                "trigger": trigger,
+                "by": "bootstrap admin",
+                "ok": result["ok"],
+                "policy": settings.GATEWAY_MODEL_POLICY,
+                "counts": counts,
+            },
+        )
+        return result
+
+    async def pin_served(self) -> dict:
+        """Trust on first use, like scripts/pin_models.py: pin whatever is served now."""
+        served = await supply_chain.served_models(self.model_server)
+        doc = {
+            "version": 1,
+            "models": [
+                {"name": n, "backend": "ollama", "digest": "sha256:" + m["digest"], **MODEL_METADATA.get(n, {})}
+                for n, m in sorted(served.items())
+            ],
+        }
+        return await self.set_lock(json.dumps(doc, indent=2))
+
+    def validate_lock(self, text: str) -> dict:
+        try:
+            pins = supply_chain.parse_lock(json.loads(text))
+        except ValueError as e:
+            return {"ok": False, "error": str(e), "models": []}
+        return {"ok": True, "error": None, "models": [dict(p.__dict__) for p in pins]}
+
+    async def set_lock(self, text: str) -> dict:
+        checked = self.validate_lock(text)
+        if not checked["ok"]:
+            return {"status": 400, **checked}
+        self._lock_path().write_text(text if text.endswith("\n") else text + "\n")
+        settings.GATEWAY_MODEL_LOCK_FILE = str(self._lock_path())
+        return {"status": 200, "verification": await self.verify_models()}
+
+    async def simulate_repull(self, name: str = "llama3.1:8b") -> dict:
+        """A new upstream build under the same name: the served digest changes."""
+        if name not in self.model_server.revisions:
+            return {"status": 404, "detail": f"{name} is not served"}
+        self.model_server.revisions[name] += 1
+        audit.append("model_pull_finished", {"model": name, "requested_by": "bootstrap admin", "status": "simulated"})
+        return {"status": 200, "verification": await self.verify_models("model_pull")}
+
+    async def check_model(self, name: str) -> dict:
+        """supply_chain.check_model under the current GATEWAY_MODEL_POLICY: what a request for `name` gets."""
+        try:
+            status = await supply_chain.check_model(name, self.model_server)
+        except supply_chain.ModelPolicyError as e:
+            return {"status": 403, "detail": str(e), "policy": settings.GATEWAY_MODEL_POLICY}
+        return {"status": 200, "model_status": status, "policy": settings.GATEWAY_MODEL_POLICY}
+
+    def mlbom(self) -> dict:
+        """Model components of the ML-BOM, built by scripts/mlbom.py (fetched into the browser)."""
+        try:
+            from scripts.mlbom import model_components
+        except ImportError:
+            return {"status": 501, "detail": "scripts/mlbom.py was not loaded", "components": []}
+        try:
+            pins = supply_chain.load_lock()
+        except supply_chain.LockError as e:
+            return {"status": 400, "detail": str(e), "components": []}
+        components = model_components(pins, supply_chain.last_result())
+        return {"lock_file": settings.GATEWAY_MODEL_LOCK_FILE, "components": components}
+
+    # ---------- evals ----------
+
+    async def run_rag_eval(self) -> dict:
+        """scripts/rag_eval.py in this runtime (it uses its own throwaway database and restores settings)."""
+        sys.modules.setdefault("demo", types.ModuleType("demo"))
+        sys.modules.setdefault("demo.engine", sys.modules[__name__])
+        from scripts import rag_eval
+
+        started = time.perf_counter()
+        report = await rag_eval.evaluate_async(4)
+        backends.set_backend(DemoBackend())  # evaluate() clears the backend when it finishes
+        problems = rag_eval.check(report, json.loads(rag_eval.THRESHOLDS.read_text()))
+        return {"report": report, "problems": problems, "seconds": round(time.perf_counter() - started, 2)}
+
+
+VERSION = "0.7.0"  # keep in step with gateway/main.py (tests check)
 
 
 def _now() -> str:
