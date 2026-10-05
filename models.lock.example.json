@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "_comment": "Example only: the digests below are placeholders, not real model digests. Generate yours with scripts/pin_models.py and review them against the publisher's values.",
+  "models": [
+    {
+      "name": "llama3.1:8b",
+      "backend": "ollama",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "source": "https://ollama.com/library/llama3.1",
+      "license": "Llama 3.1 Community License",
+      "purpose": "text-generation"
+    },
+    {
+      "name": "nomic-embed-text:latest",
+      "backend": "ollama",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "source": "https://ollama.com/library/nomic-embed-text",
+      "license": "Apache-2.0",
+      "purpose": "embedding"
+    },
+    {
+      "name": "Qwen/Qwen2.5-7B-Instruct",
+      "backend": "openai_compatible",
+      "files": [
+        {"path": "/models/Qwen2.5-7B-Instruct/model-00001-of-00004.safetensors", "sha256": "2222222222222222222222222222222222222222222222222222222222222222"}
+      ],
+      "source": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct",
+      "license": "Apache-2.0",
+      "purpose": "text-generation"
+    }
+  ]
+}

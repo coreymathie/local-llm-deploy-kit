@@ -1,0 +1,123 @@
+{{- if .Values.vllm.enabled }}
+{{- if not .Values.vllm.cache.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "lldk.fullname" . }}-vllm-cache
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.vllm.cache.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.vllm.cache.size | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lldk.fullname" . }}-vllm
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vllm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "lldk.vllmSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lldk.vllmSelectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: vllm
+          image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
+          imagePullPolicy: {{ .Values.vllm.image.pullPolicy }}
+          args:
+            - --model
+            - {{ .Values.vllm.model | quote }}
+            - --max-model-len
+            - {{ .Values.vllm.maxModelLen | quote }}
+            - --port
+            - "8000"
+            {{- range .Values.vllm.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - {name: HF_HOME, value: /cache/huggingface}
+            {{- if .Values.vllm.offline }}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: TRANSFORMERS_OFFLINE, value: "1"}
+            {{- end }}
+            {{- if .Values.vllm.hfTokenSecret }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.vllm.hfTokenSecret }}, key: token}
+            {{- end }}
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "lldk.secretName" . }}, key: openaiCompatApiKey, optional: true}
+          ports:
+            - {name: http, containerPort: 8000, protocol: TCP}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 90  # loading weights can take minutes
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          resources:
+            requests:
+              {{- toYaml .Values.vllm.resources.requests | nindent 14 }}
+              {{- if gt (int .Values.vllm.gpus) 0 }}
+              nvidia.com/gpu: {{ .Values.vllm.gpus }}
+              {{- end }}
+            limits:
+              {{- with .Values.vllm.resources.limits }}
+              {{- toYaml . | nindent 14 }}
+              {{- end }}
+              {{- if gt (int .Values.vllm.gpus) 0 }}
+              nvidia.com/gpu: {{ .Values.vllm.gpus }}
+              {{- end }}
+          volumeMounts:
+            - {name: cache, mountPath: /cache}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-vllm-cache" (include "lldk.fullname" .)) .Values.vllm.cache.existingClaim }}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: {{ .Values.vllm.shmSize }}}
+      {{- with .Values.vllm.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vllm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lldk.fullname" . }}-vllm
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vllm
+spec:
+  selector:
+    {{- include "lldk.vllmSelectorLabels" . | nindent 4 }}
+  ports:
+    - {name: http, port: 8000, targetPort: http, protocol: TCP}
+{{- end }}

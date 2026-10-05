@@ -1,0 +1,88 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default deny for the gateway pod, then: ingress from the configured peers (and Prometheus when a
+# ServiceMonitor is used), egress to DNS, the inference backend and, if OIDC is on, the IdP CIDRs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lldk.fullname" . }}
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lldk.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.ingressFrom }}
+        - {{- toYaml . | nindent 10 }}
+        {{- end }}
+        - podSelector:  # `helm test` pod of this release
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: test
+        {{- if .Values.serviceMonitor.enabled }}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+        {{- end }}
+      ports:
+        - {port: http, protocol: TCP}
+  egress:
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    {{- if .Values.vllm.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "lldk.vllmSelectorLabels" . | nindent 14 }}
+      ports:
+        - {port: 8000, protocol: TCP}
+    {{- end }}
+    {{- with .Values.networkPolicy.backendEgressCidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {port: {{ $.Values.networkPolicy.backendPort }}, protocol: TCP}
+    {{- end }}
+    {{- if and .Values.gateway.oidc.enabled .Values.networkPolicy.oidcEgressCidrs }}
+    - to:
+        {{- range .Values.networkPolicy.oidcEgressCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {port: 443, protocol: TCP}
+    {{- end }}
+{{- if .Values.vllm.enabled }}
+---
+# vLLM accepts traffic only from the gateway; egress only DNS and, unless offline, HTTPS for model downloads.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lldk.fullname" . }}-vllm
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lldk.vllmSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "lldk.selectorLabels" . | nindent 14 }}
+      ports:
+        - {port: 8000, protocol: TCP}
+  egress:
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    {{- if not .Values.vllm.offline }}
+    - ports:
+        - {port: 443, protocol: TCP}
+    {{- end }}
+{{- end }}
+{{- end }}
