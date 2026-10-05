@@ -66,7 +66,7 @@ def test_real_bundle_has_checksums_that_verify_and_catch_tampering(tmp_path):
         assert (out / "ollama" / "blobs" / d.replace(":", "-")).is_file()
     assert (out / "ollama" / "manifests" / "registry.ollama.ai" / "library" / "llama3.1" / "8b").is_file()
     sources = sorted(p.name for p in (out / "source").iterdir())
-    assert any(n.startswith("local-llm-deploy-kit-") for n in sources) and any(
+    assert any(n.startswith("private-llm-platform-") for n in sources) and any(
         n.startswith("local-llm-gateway-chart-") for n in sources
     )
     bom = json.loads((out / "mlbom.cdx.json").read_text())

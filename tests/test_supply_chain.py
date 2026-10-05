@@ -257,7 +257,7 @@ def test_ml_bom_is_valid_cyclonedx_1_6_with_models_and_dependencies(ollama, tmp_
     libs = {c["name"].lower(): c for c in bom["components"] if c["type"] == "library"}
     assert libs["fastapi"]["purl"].startswith("pkg:pypi/fastapi@") and "pyjwt" in libs and "cryptography" in libs
     top = bom["dependencies"][0]
-    assert top["ref"] == "local-llm-deploy-kit" and "model:ollama:llama3.1:8b" in top["dependsOn"]
+    assert top["ref"] == "private-llm-platform" and "model:ollama:llama3.1:8b" in top["dependsOn"]
     refs = {c["bom-ref"] for c in bom["components"]}
     assert all(d in refs for dep in bom["dependencies"][1:] for d in dep["dependsOn"])  # no dangling edges
 
