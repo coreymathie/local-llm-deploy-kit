@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# local-llm-deploy-kit: macOS installer
-#   curl -fsSL https://raw.githubusercontent.com/coreymathie/local-llm-deploy-kit/main/scripts/install_macos.sh | bash
+# private-llm-platform: macOS installer
+#   curl -fsSL https://raw.githubusercontent.com/coreymathie/private-llm-platform/main/scripts/install_macos.sh | bash
 # Corey Mathie, 2026
 set -euo pipefail
 
 MODEL="${LLDK_MODEL:-llama3.1:8b}"
 EMBED_MODEL="${LLDK_EMBED_MODEL:-nomic-embed-text}"
-INSTALL_DIR="${LLDK_DIR:-$HOME/.local-llm-deploy-kit}"
-REPO="${LLDK_REPO:-https://github.com/coreymathie/local-llm-deploy-kit.git}"
+INSTALL_DIR="${LLDK_DIR:-$HOME/.private-llm-platform}"
+REPO="${LLDK_REPO:-https://github.com/coreymathie/private-llm-platform.git}"
 
 need() { command -v "$1" >/dev/null 2>&1; }
 

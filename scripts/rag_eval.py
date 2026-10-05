@@ -7,6 +7,7 @@ documents.
     python scripts/rag_eval.py                 # Markdown table for every retrieval configuration
     python scripts/rag_eval.py --json          # machine-readable
     python scripts/rag_eval.py --check         # exit 1 if any gated metric is below evals/thresholds.json
+    python scripts/rag_eval.py --console-data  # write demo/data/rag_eval.json for the console's Evals screen
 
 Runs offline and deterministically: it uses the gateway's real ingestion, access control and retrieval
 code (gateway/rag.py, gateway/retrieval.py) with the browser demo's embedder (hashed bag-of-words, not a
@@ -35,6 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "evals" / "golden"
 THRESHOLDS = ROOT / "evals" / "thresholds.json"
+CONSOLE_DATA = ROOT / "demo" / "data" / "rag_eval.json"
 CONFIGS = [("vector", "none"), ("bm25", "none"), ("hybrid", "none"), ("hybrid", "lexical")]
 COLLECTION = "golden"
 
@@ -114,6 +116,11 @@ async def _evaluate(k: int, configs: list[tuple[str, str]]) -> dict:
 
 def evaluate(k: int = 4, configs: list[tuple[str, str]] | None = None) -> dict:
     """Run the eval in a throwaway database; restores the gateway settings and backend afterwards."""
+    return asyncio.run(evaluate_async(k, configs))
+
+
+async def evaluate_async(k: int = 4, configs: list[tuple[str, str]] | None = None) -> dict:
+    """evaluate() for callers already inside an event loop (the console runs it in the browser)."""
     from demo.engine import DEMO_EMBED_MODEL, DemoBackend
     from gateway import backends
     from gateway.config import settings
@@ -124,7 +131,7 @@ def evaluate(k: int = 4, configs: list[tuple[str, str]] | None = None) -> dict:
         settings.GATEWAY_EMBED_MODEL = DEMO_EMBED_MODEL
         backends.set_backend(DemoBackend())
         try:
-            return asyncio.run(_evaluate(k, configs or CONFIGS))
+            return await _evaluate(k, configs or CONFIGS)
         finally:
             for name, value in saved.items():
                 setattr(settings, name, value)
@@ -165,14 +172,38 @@ def markdown(report: dict) -> str:
     return "\n".join(lines)
 
 
+def console_data(report: dict) -> dict:
+    """What the console's Evals screen shows: this report, the gates, and the files that produced it.
+
+    No timestamp, so the committed file only changes when results change (a test compares it to a fresh run).
+    """
+    _docs, questions, _acl = load_golden()
+    thresholds = json.loads(THRESHOLDS.read_text())
+    files = [p.relative_to(ROOT).as_posix() for p in sorted((GOLDEN / "docs").glob("*.md"))]
+    return {
+        "generated_by": "python scripts/rag_eval.py --console-data",
+        "measured": True,
+        "report": report,
+        "thresholds": thresholds,
+        "problems": check(report, thresholds),
+        "questions": {q["id"]: {"question": q["question"], "doc": q["doc"]} for q in questions},
+        "golden_files": [*files, "evals/golden/questions.jsonl", "evals/golden/acl.json", "evals/thresholds.json"],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--k", type=int, default=4, help="passages retrieved per question (default 4, the API default)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--check", action="store_true", help="fail if a metric is below evals/thresholds.json")
+    ap.add_argument("--console-data", action="store_true", help=f"write {CONSOLE_DATA.relative_to(ROOT)}")
     args = ap.parse_args(argv)
 
     report = evaluate(args.k)
+    if args.console_data:
+        CONSOLE_DATA.parent.mkdir(parents=True, exist_ok=True)
+        CONSOLE_DATA.write_text(json.dumps(console_data(report), indent=2) + "\n")
+        print(f"wrote {CONSOLE_DATA.relative_to(ROOT)}", file=sys.stderr)
     if args.json:
         print(json.dumps(report, indent=2))
     else:

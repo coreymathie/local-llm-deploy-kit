@@ -469,8 +469,19 @@ def candidates(collection: str, access: Access) -> list:
     return _open_rows(rows)
 
 
-async def retrieve(collection: str, question: str, top_k: int, access: Access) -> list[Source]:
-    """Top passages for the question among the documents `access` admits (see access_for)."""
+async def retrieve(
+    collection: str,
+    question: str,
+    top_k: int,
+    access: Access,
+    mode: str | None = None,
+    reranker: str | None = None,
+) -> list[Source]:
+    """Top passages for the question among the documents `access` admits (see access_for).
+
+    `mode` and `reranker` override GATEWAY_RETRIEVAL_MODE / GATEWAY_RERANKER for this call (per-request
+    choice in /ask); they change ranking only, never which documents are candidates.
+    """
     check_collection(collection)
     if access.collection != collection:
         raise ValueError("access decision is for a different collection")
@@ -479,7 +490,8 @@ async def retrieve(collection: str, question: str, top_k: int, access: Access) -
     rows = candidates(collection, access)
     if not rows:
         return []
-    mode = settings.GATEWAY_RETRIEVAL_MODE
+    config = retrieval_config(mode, reranker)
+    mode = config["mode"]
     vector_scores = None
     if mode != "bm25":
         q = (await embed([question]))[0]
@@ -492,7 +504,7 @@ async def retrieve(collection: str, question: str, top_k: int, access: Access) -
         mode=mode,
         top_k=max(1, min(top_k, 12)),
         rrf_k=settings.GATEWAY_RRF_K,
-        reranker=retrieval.get_reranker(settings.GATEWAY_RERANKER, settings.GATEWAY_CROSS_ENCODER_MODEL),
+        reranker=retrieval.get_reranker(config["reranker"], settings.GATEWAY_CROSS_ENCODER_MODEL),
         rerank_candidates=settings.GATEWAY_RERANK_CANDIDATES,
     )
     return [
@@ -510,9 +522,19 @@ async def retrieve(collection: str, question: str, top_k: int, access: Access) -
     ]
 
 
-def retrieval_config() -> dict:
-    """What produced a ranking; recorded with each answer."""
-    return {"mode": settings.GATEWAY_RETRIEVAL_MODE, "reranker": settings.GATEWAY_RERANKER}
+RETRIEVAL_MODES = ("vector", "bm25", "hybrid")
+RERANKERS = ("none", "lexical", "cross_encoder")
+
+
+def retrieval_config(mode: str | None = None, reranker: str | None = None) -> dict:
+    """What produced a ranking; recorded with each answer. Per-request overrides are validated here."""
+    if mode is not None and mode not in RETRIEVAL_MODES:
+        raise RagError(f"retrieval mode must be one of {', '.join(RETRIEVAL_MODES)}")
+    if reranker is not None and reranker not in RERANKERS:
+        raise RagError(f"reranker must be one of {', '.join(RERANKERS)}")
+    if reranker == "cross_encoder" and not settings.GATEWAY_CROSS_ENCODER_MODEL:
+        raise RagError("the cross_encoder reranker needs GATEWAY_CROSS_ENCODER_MODEL")
+    return {"mode": mode or settings.GATEWAY_RETRIEVAL_MODE, "reranker": reranker or settings.GATEWAY_RERANKER}
 
 
 def cited_numbers(answer: str) -> set[int]:

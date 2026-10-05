@@ -1,7 +1,65 @@
+# Private LLM Platform: gateway + console.
+#
+#   docker compose up                 -> http://localhost:8080/console/  (simulated backend, no model, no GPU)
+#
+# The default stack runs the gateway against `mock-llm`, which is scripts/mock_openai_server.py in its
+# simulated mode: hashed bag-of-words embeddings and extractive answers that quote the retrieved
+# passages with citations. It is NOT a language model; it lets the console, keys, ACLs, retrieval and the
+# audit log work end to end on any machine. The admin key is printed once in the gateway log:
+#   docker compose logs gateway | grep "Bootstrap admin"
+#
+# Real answers with Ollama (the gateway's default backend for actual use):
+#   docker compose --env-file profiles/compose-ollama.env --profile ollama up -d
+#   docker compose exec ollama ollama pull llama3.1:8b && docker compose exec ollama ollama pull nomic-embed-text
+#
+# GPU backend (vLLM, any OpenAI-compatible server): see the vllm service below.
+
+x-gateway-image: &gateway-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: private-llm-platform/gateway:local
+
 services:
+  mock-llm:
+    <<: *gateway-image
+    container_name: plp-mock-llm
+    restart: unless-stopped
+    command: ["uvicorn", "scripts.mock_openai_server:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      MOCK_MODE: simulated   # extractive answers + hashed embeddings; "tokens" for load testing
+    # No published port: only the gateway talks to it, on the compose network.
+
+  gateway:
+    <<: *gateway-image
+    container_name: plp-gateway
+    restart: unless-stopped
+    depends_on: [mock-llm]
+    environment:
+      # Default here: the simulated backend. profiles/compose-ollama.env switches to Ollama.
+      BACKEND: ${BACKEND:-openai_compatible}
+      OLLAMA_HOST: http://ollama:11434
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-http://mock-llm:8001/v1}
+      OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8080
+      GATEWAY_DEFAULT_MODEL: ${GATEWAY_DEFAULT_MODEL:-mock-model}
+      GATEWAY_EMBED_MODEL: ${GATEWAY_EMBED_MODEL:-mock-embed}
+      GATEWAY_ADMIN_BOOTSTRAP_KEY: ${GATEWAY_ADMIN_BOOTSTRAP_KEY:-}
+      GATEWAY_LOG_PROMPTS: ${GATEWAY_LOG_PROMPTS:-false}
+      GATEWAY_REDACT_PROMPTS: ${GATEWAY_REDACT_PROMPTS:-true}
+      GATEWAY_DB_PATH: /data/gateway.db
+      GATEWAY_LOG_DIR: /data/logs
+    volumes:
+      - gateway-data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # Real local models. Started with --profile ollama (see the top of this file).
   ollama:
     image: ollama/ollama:latest
-    container_name: lldk-ollama
+    container_name: plp-ollama
+    profiles: ["ollama"]
     restart: unless-stopped
     volumes:
       - ollama-data:/root/.ollama
@@ -16,47 +74,15 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
-  gateway:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM python:3.11-slim
-        WORKDIR /app
-        COPY requirements.txt .
-        RUN pip install --no-cache-dir -r requirements.txt
-        COPY gateway /app/gateway
-        COPY admin-ui /app/admin-ui
-        EXPOSE 8080
-        CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8080"]
-    container_name: lldk-gateway
-    restart: unless-stopped
-    depends_on: [ollama]
-    environment:
-      # Default: Ollama. For vLLM (or any OpenAI-compatible server) see the vllm service below.
-      BACKEND: ${BACKEND:-ollama}
-      OLLAMA_HOST: http://ollama:11434
-      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-http://vllm:8000/v1}
-      OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
-      GATEWAY_HOST: 0.0.0.0
-      GATEWAY_PORT: 8080
-      GATEWAY_DEFAULT_MODEL: ${GATEWAY_DEFAULT_MODEL:-llama3.1:8b}
-      GATEWAY_EMBED_MODEL: ${GATEWAY_EMBED_MODEL:-nomic-embed-text}
-      GATEWAY_DB_PATH: /data/gateway.db
-      GATEWAY_LOG_DIR: /data/logs
-    volumes:
-      - gateway-data:/data
-    ports:
-      - "127.0.0.1:8080:8080"
-
   # Optional GPU backend. Not started by a plain `docker compose up`. To use it:
-  #   BACKEND=openai_compatible GATEWAY_DEFAULT_MODEL=Qwen/Qwen2.5-7B-Instruct \
+  #   OPENAI_COMPAT_BASE_URL=http://vllm:8000/v1 GATEWAY_DEFAULT_MODEL=Qwen/Qwen2.5-7B-Instruct \
   #   VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct docker compose --profile vllm up -d
   # Needs an NVIDIA GPU with the NVIDIA Container Toolkit. vLLM serves one model per
   # process, so document Q&A also needs an embedding endpoint; see
   # docs/adr/0001-inference-backend.md for the options.
   vllm:
     image: vllm/vllm-openai:latest
-    container_name: lldk-vllm
+    container_name: plp-vllm
     profiles: ["vllm"]
     restart: unless-stopped
     command: ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}", "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}"]

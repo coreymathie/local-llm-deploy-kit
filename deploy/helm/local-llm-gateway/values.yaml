@@ -3,7 +3,7 @@
 image:
   # No public image is published: build the repository's Dockerfile and push it to your registry.
   repository: registry.example.internal/local-llm-gateway
-  tag: "0.6.0"
+  tag: "0.7.0"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

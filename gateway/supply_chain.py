@@ -103,10 +103,17 @@ def load_lock(path: str | Path | None = None) -> list[Pin]:
         doc = json.loads(Path(path).read_text())
     except (OSError, ValueError) as e:
         raise LockError(f"can't read model lock file {path}: {e}") from e
-    if doc.get("version") != 1 or not isinstance(doc.get("models"), list):
+    return parse_lock(doc)
+
+
+def parse_lock(doc) -> list[Pin]:
+    """Validate a lock document (already parsed JSON). Raises LockError on the first problem."""
+    if not isinstance(doc, dict) or doc.get("version") != 1 or not isinstance(doc.get("models"), list):
         raise LockError('model lock file needs {"version": 1, "models": [...]}')
     pins, seen = [], set()
     for m in doc["models"]:
+        if not isinstance(m, dict):
+            raise LockError("every entry under models must be an object")
         pin = Pin(**{k: v for k, v in m.items() if k in Pin.__dataclass_fields__})
         if not pin.name or pin.name in seen:
             raise LockError(f"model {pin.name!r} is missing a name or listed twice")
@@ -116,8 +123,10 @@ def load_lock(path: str | Path | None = None) -> list[Pin]:
         pin.digest = _norm_digest(pin.digest)
         if pin.digest and not HEX64.match(pin.digest):
             raise LockError(f"{pin.name}: digest must be a SHA-256 hex string")
+        if not isinstance(pin.files, list):
+            raise LockError(f"{pin.name}: files must be a list")
         for f in pin.files:
-            if not f.get("path") or not HEX64.match(_norm_digest(f.get("sha256", ""))):
+            if not isinstance(f, dict) or not f.get("path") or not HEX64.match(_norm_digest(f.get("sha256", ""))):
                 raise LockError(f"{pin.name}: every pinned file needs a path and a sha256")
         if not pin.digest and not pin.files:
             log.warning("model %s is pinned without a digest or files: it can't be verified", pin.name)

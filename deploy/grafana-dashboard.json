@@ -8,13 +8,13 @@
       "pluginName": "Prometheus"
     }
   ],
-  "title": "local-llm-deploy-kit gateway",
+  "title": "private-llm-platform gateway",
   "uid": "lldk-gateway",
   "description": "Traffic, latency, TTFT, tokens, backend errors and rejected requests from the gateway's /metrics endpoint.",
   "tags": [
     "llm",
     "gateway",
-    "local-llm-deploy-kit"
+    "private-llm-platform"
   ],
   "schemaVersion": 39,
   "version": 1,

@@ -1,7 +1,8 @@
 # Corey Mathie, 2026
-# Gateway image for Kubernetes (deploy/helm/local-llm-gateway) and air-gapped installs.
+# Gateway image for docker compose, Kubernetes (deploy/helm/local-llm-gateway) and air-gapped installs.
+# Includes demo/ (the console, served at /console) and scripts/ (mock backend, ML-BOM).
 # Not built in the repository's CI; build and push it to your own registry:
-#   docker build -t registry.example.internal/local-llm-gateway:0.6.0 .
+#   docker build -t registry.example.internal/local-llm-gateway:0.7.0 .
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
@@ -16,6 +17,7 @@ RUN if [ "$OFFLINE" = "1" ]; then pip install --no-index --find-links /tmp/build
 
 COPY gateway /app/gateway
 COPY admin-ui /app/admin-ui
+COPY demo /app/demo
 COPY scripts /app/scripts
 
 # Unprivileged user; all writable state lives under /data (a volume), so the root filesystem can be read-only.

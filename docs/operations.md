@@ -43,8 +43,8 @@ retrieval time is BM25 tokenization in Python, not decryption. Re-measure on you
 ### Turning it on
 
 ```bash
-python scripts/keys.py generate --keyring /etc/local-llm-deploy-kit/keyring.json --activate
-# .env: GATEWAY_ENCRYPT_AT_REST=true, GATEWAY_ENCRYPTION_KEY_FILE=/etc/local-llm-deploy-kit/keyring.json
+python scripts/keys.py generate --keyring /etc/private-llm-platform/keyring.json --activate
+# .env: GATEWAY_ENCRYPT_AT_REST=true, GATEWAY_ENCRYPTION_KEY_FILE=/etc/private-llm-platform/keyring.json
 python scripts/keys.py encrypt-existing   # documents stored before encryption was enabled; then VACUUM runs
 python scripts/keys.py status
 ```

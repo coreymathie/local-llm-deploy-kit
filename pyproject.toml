@@ -1,6 +1,6 @@
 [project]
-name = "local-llm-deploy-kit"
-version = "0.6.0"
+name = "private-llm-platform"
+version = "0.7.0"
 description = "Private LLM gateway: Ollama or vLLM behind an OpenAI-compatible API with API keys and OIDC roles, permission-aware hybrid document Q&A, encryption at rest, model pinning, a tamper-evident audit log, Prometheus metrics, a Helm chart and an admin UI"
 readme = "README.md"
 requires-python = ">=3.11"
