@@ -1,5 +1,78 @@
 # Changelog
 
+## [0.6.0] — 2026-10
+
+Upgrade notes (behavior changes; details under Changed)
+- Ranking: hybrid retrieval is the default, and `/ask` sources' `score` is now the final ranking score, not cosine similarity (that is `scores.vector`). `GATEWAY_RETRIEVAL_MODE=vector` restores v0.5 ranking.
+- Healthcare and finance profiles now set `GATEWAY_COLLECTION_DEFAULT_ACCESS=restricted` and `GATEWAY_MODEL_POLICY=enforce`: grant collection access and pin models (`scripts/pin_models.py`) before users can ask questions.
+- Startup now fails on an unsafe OIDC configuration, encryption enabled without a loadable key, or a malformed model lock file.
+- The SQLite schema gains columns and tables, added in place on startup; v0.5 databases keep working, but a database opened by 0.6 is not tested with 0.5.
+- Internal Python API: auth dependencies return `Principal`; `rag.retrieve()` and `rag.list_documents()` take an access decision.
+
+Added
+- **OIDC / JWT authentication alongside API keys** (`gateway/identity.py`, ADR 0005). With `GATEWAY_OIDC_ENABLED=true`, bearer JWTs are verified against the issuer's JWKS (discovered from the issuer or configured), with an RS256/ES256 allow-list checked before key lookup (no `none`, no HMAC), key-type matching, required `iss`/`aud`/`exp`/`sub`, configurable clock skew, a 16 KiB size cap, JWKS caching, refetch on unknown `kid` for key rotation (throttled to once per 30 s), and fail-closed behavior when the IdP stays unreachable. Unsafe settings fail at startup.
+- **Roles**: `admin`, `user`, `reader:<collection>` / `reader:*`, mapped from a configurable groups claim (`GATEWAY_OIDC_GROUP_ROLES`; dotted claim paths for nested claims). API keys keep their meaning (admin keys: `admin`; others: `user`). Reader-only callers can list and ask their collections but not chat, embed or list models. `GATEWAY_COLLECTION_DEFAULT_ACCESS` (`open` by default, the v0.5 behavior, or `restricted`).
+- `GET /v1/me` (caller identity, roles, readable collections) and `GET /admin/users` (token users and their usage). Token callers are rate-limited per subject, attributed as `user:<username>` in the audit log, and labelled `oidc` in metrics (no user names in label values).
+- Admin page: sign in with an API key or a pasted access token; cards are shown by role.
+- `tests/test_identity.py` (fake IdP with locally generated RSA and EC keys in `tests/idp.py`, plus a real HTTP JWKS endpoint on 127.0.0.1).
+- Dependencies: `PyJWT`, `cryptography`.
+- **Permission-aware retrieval** (OWASP LLM08). Collection access lists (`GET|PUT /admin/collections/{c}/acl`) and document access lists (`acl` on upload/text add, `PUT /v1/collections/{c}/documents/{id}/acl`) with entries `group:<name>`, `key:<label>`, `user:<username>`. `rag.access_for()` decides per caller before any passage is loaded; `rag.candidates()` filters in SQL, so hidden passages are never scored, prompted, cited, flagged or counted. Audit: `access` decision on every `document_question` (basis, documents visible/hidden, rule per source), `document_question_denied`, `collection_acl_changed`, `document_acl_changed` (before/after). API keys can carry `groups` (set at creation).
+- Admin page: access-list fields for uploads and collections; an Access column for admins.
+- Browser demo panel 5: switch between SSO personas and API keys in different groups and see different answers and citations over two restricted sample documents; `scripts/demo_smoke.py` checks it.
+- `tests/test_acl.py`, including a test that a v0.5 database upgrades in place.
+- **Hybrid retrieval** (`gateway/retrieval.py`, ADR 0006): pure-Python BM25 over the caller's readable passages, fused with the cosine ranking by Reciprocal Rank Fusion. `GATEWAY_RETRIEVAL_MODE` (`hybrid` default, `vector`, `bm25`), `GATEWAY_RRF_K`. Pluggable `Reranker` interface with a deterministic `lexical` reranker; `cross_encoder` (local sentence-transformers model) is interface only, not tested here. `/ask` sources carry `scores` (`vector`, `bm25`, `rrf`, `rerank`); responses and audit entries record the `retrieval` configuration.
+- **RAG eval gate**: `scripts/rag_eval.py` over `evals/golden/` (12 fictional documents, 2 restricted; 43 questions) reports recall@1, recall@k, MRR, citation accuracy, answer-contains and ACL leaks per configuration, offline and deterministic (demo embedder, extractive answers); `--check` enforces `evals/thresholds.json` and runs in CI and in pytest. Measured values in `docs/benchmarks.md` are checked against a fresh run by a test.
+- Browser demo: retrieval mode selector and lexical-reranker toggle, with per-source score components (17 smoke checks).
+- **Encryption at rest** (`gateway/crypto.py`, ADR 0007): envelope encryption with AES-256-GCM, a data key per document sealing its passages' text and vectors (bound to document, passage and field), wrapped by a key-encryption key from a keyring file or environment key behind a `KeyProvider` interface (KMS providers documented, not shipped). Optional sealing of audit free-text fields (`GATEWAY_AUDIT_ENCRYPT_TEXT`); the hash chain still verifies without keys. Decryption happens after the access filter. Fails closed (startup check; 500 on decryption failure).
+- `scripts/keys.py`: `generate` (0600 keyring), `status`, `encrypt-existing` (then `VACUUM`), `rewrap` (rotation without re-encrypting passages), `retire` (refuses while a key is active or still referenced).
+- `scripts/backup.py` / `scripts/restore.py`: online SQLite backup plus audit log with a SHA-256 manifest and needed key ids (never keys); restore checks checksums, SQLite integrity, the audit chain and key availability before changing anything, moves existing files aside with `--force`, and re-verifies. `scripts/bench_storage.py` measures encryption overhead and backup/restore time.
+- `docs/operations.md`: state inventory, encryption, rotation, KMS interface, backup, restore, RTO/RPO guidance (no promised numbers; measured figures labeled).
+- Profiles: commented encryption settings for healthcare and finance.
+- **Model supply chain** (`gateway/supply_chain.py`, ADR 0008): a model lock file (`GATEWAY_MODEL_LOCK_FILE`, `models.lock.example.json`) pins Ollama manifest digests or SHA-256 of weight files; verification at startup (bounded), after pulls, on `POST /admin/models/verify` and lazily every `GATEWAY_MODEL_VERIFY_INTERVAL_SECONDS` for Ollama; statuses verified/mismatch/missing/unpinned/unverifiable/error; `GATEWAY_MODEL_POLICY` off/warn/enforce across chat, embeddings, document questions and ingestion; audited `model_verification`; metric `gateway_model_policy_decisions_total`; `GET /admin/models/verification`.
+- **Helm chart** `deploy/helm/local-llm-gateway`: gateway Deployment (one replica, Recreate, non-root, read-only root filesystem, dropped capabilities, seccomp, startup/liveness/readiness probes), PVC, ConfigMap, Secret or `existingSecret`, keyring Secret mount, model lock ConfigMap, default-deny NetworkPolicies (gateway and vLLM), optional ServiceMonitor, optional vLLM Deployment with `nvidia.com/gpu` resources, cache PVC, shared memory and offline mode, `helm test` pod; `values.schema.json`; example values for GPU and air-gapped installs; renders fail on incomplete security settings. **Not validated with helm here** (it couldn't be downloaded in the build environment): tests validate values against the schema and render the templates with a stdlib Go `text/template` harness (`tests/helm_render/render.go`); CI adds `helm lint` and `helm template`.
+- `Dockerfile` for the gateway image (non-root, state under `/data`, optional offline wheel install); not built here (no Docker daemon).
+- `scripts/airgap_bundle.sh`: wheels (cross-platform), saved images, Ollama manifests and blobs, Hugging Face snapshots, source, chart, model lock, ML-BOM, `INSTALL.txt` and `SHA256SUMS`; `--dry-run` and `--verify`. `docs/kubernetes.md`.
+- `scripts/pin_models.py` (trust-on-first-use pinning, keeps license/source metadata) and `scripts/mlbom.py` (CycloneDX 1.6 ML-BOM of pinned models and resolved Python packages, validated against the CycloneDX schema in tests; CI installs `cyclonedx-python-lib[json-validation]` for that test).
+
+Changed
+- `GET /v1/collections` lists only collections the caller may read; `GET /v1/collections/{c}/documents` returns an empty list and `/ask` returns the same 404 as for a missing collection when the caller may not read it (no existence oracle). With default settings, every API key can still read every collection, as in v0.5.
+- Database: new columns `documents.kek_id` and `documents.wrapped_dek` (encryption at rest), added in place.
+- `audit.verify()` accepts an optional path (used to verify backups); `audit.recent()` opens sealed fields for display.
+- Database: new columns `api_keys.groups` and `documents.acl` and tables `principal_usage`, `collection_acls`, added in place on startup (additive; v0.5 databases keep working).
+- **Profiles (behavior change):** `profiles/healthcare.env` and `profiles/finance.env` set `GATEWAY_COLLECTION_DEFAULT_ACCESS=restricted`, so collections need an explicit grant before non-admin callers can read them, and `GATEWAY_MODEL_POLICY=enforce` with a lock file path, so no model is served until it is pinned (`scripts/pin_models.py`).
+- Default `GATEWAY_MODEL_POLICY=warn`: without a lock file every model is reported `unpinned` (logged once per verification run, counted in metrics) but served as before; the gateway now calls the backend's model list at startup and every 5 minutes (Ollama).
+- **Retrieval default (behavior change):** `GATEWAY_RETRIEVAL_MODE=hybrid` is the new default, and a source's `score` is now the final ranking score (an RRF value in hybrid mode) instead of cosine similarity; the cosine value is in `scores.vector`. Set `GATEWAY_RETRIEVAL_MODE=vector` for v0.5 ranking.
+- `rag.retrieve()` takes a required `access` argument and `rag.list_documents()` an `access` decision (internal API).
+- Auth dependencies return a `Principal` (identity, roles, groups) instead of the `ApiKey` record; `require_key` keeps its name and now accepts tokens too.
+
+Fixed
+- Admin page escapes API key values in the keys table (they were inserted into an attribute unescaped).
+- Browser demo: long suggestion chips wrap instead of widening the page on phones.
+
+## [0.5.0] — 2026-10
+
+Added
+- **Pluggable inference backends** (`gateway/backends.py`). `BACKEND=ollama` (default, unchanged API behavior) or `BACKEND=openai_compatible` for vLLM, SGLang, TGI, NVIDIA NIM or any server with `/v1/chat/completions`, `/v1/embeddings` and `/v1/models` (`OPENAI_COMPAT_BASE_URL`, optional `OPENAI_COMPAT_API_KEY`). Routes and RAG call the interface; client keys never go upstream; `/v1/pull` returns 501 on non-Ollama backends. Opt-in `vllm` Docker Compose profile for NVIDIA hosts.
+- `stream_options.include_usage` on `/v1/chat/completions` streams (a final usage chunk, as in the OpenAI API). Streaming requests now read the first upstream event before answering, so a failing backend returns 502/4xx instead of a broken 200 stream.
+- **Prometheus `/metrics`** (`gateway/metrics.py`): requests by route template, status and key *label*; latency, backend latency and time-to-first-token histograms; tokens per key and model; backend errors by reason; build info. Optional bearer protection (`GATEWAY_METRICS_TOKEN`), off switch (`GATEWAY_METRICS_ENABLED`). Grafana dashboard and scrape config in `deploy/`.
+- **OpenTelemetry GenAI spans** (`gateway/telemetry.py`) for chat, streaming chat and embeddings, with `gen_ai.*` attributes and `error.type`; no prompt text; no-op without OpenTelemetry installed.
+- **Prompt-injection flags**: `rag.injection_signals()` marks retrieved passages that look like injected instructions; flags appear in `/ask` responses (`injection_flags`) and in `document_question` audit entries. Flag-and-audit, not blocking (ADR 0004).
+- `scripts/loadtest.py`: async load test reporting TTFT, latency p50/p95/p99, RPS, error rate and tokens/s per concurrency level, as Markdown or JSON. `scripts/mock_openai_server.py`: OpenAI-compatible stub for measuring gateway overhead.
+- **Browser demo** (`demo/`, served by GitHub Pages): the gateway's `store`, `auth`, `audit`, `redact`, `rag` and `backends` modules run unmodified in Pyodide, with panels for keys and rate limiting, redaction, audit tampering and verification, and cited document Q&A over three fictional sample policies. Demo mode uses hashed bag-of-words embeddings and extractive answers (no LLM), labelled on the page. `scripts/demo_smoke.py` tests it headlessly with Playwright.
+- Docs: ADRs 0001–0004, `docs/threat-model.md` (STRIDE + OWASP LLM Top 10 2025), `docs/controls.md` (HIPAA 164.312, SOC 2 CC6/CC7, NIST AI RMF / AI 600-1, ISO/IEC 42001, with code, test and gaps per row), `docs/benchmarks.md` (method, template, measured gateway overhead). README restructured.
+- 69 new tests (89 total), including tests that every code/test reference in the docs exists and every metric the dashboard queries is exported. CI also lints `demo/` and installs `opentelemetry-sdk` so span tests run.
+
+Changed
+- Upstream HTTP uses one pooled client per event loop instead of a new client per call. Building a client cost about 48 ms of blocking CPU on the test host and capped throughput at about 17 requests/s; measured gateway throughput with a stub upstream rose to about 100–110 requests/s (`docs/benchmarks.md`).
+- httpx no longer logs every upstream request at INFO.
+- `/health` returns `backend` and `backend_ok`; the `ollama` field is kept when the backend is Ollama. The admin page shows the backend name.
+- `prometheus-client` added to `requirements.txt`.
+
+Fixed
+- Phone redaction left the opening parenthesis of numbers like `(415) 555-0134` in place.
+- Profile comments claimed redaction of account numbers and PHI; they now list what is actually redacted.
+- Admin page escapes error messages before rendering them.
+
 ## [0.4.0] — 2026-10
 
 Added

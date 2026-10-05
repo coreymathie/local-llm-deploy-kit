@@ -1,0 +1,138 @@
+# Default values for local-llm-gateway. Validated by values.schema.json.
+
+image:
+  # No public image is published: build the repository's Dockerfile and push it to your registry.
+  repository: registry.example.internal/local-llm-gateway
+  tag: "0.6.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# One replica: state is a SQLite file on a ReadWriteOnce volume and rate limits are per process.
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+backend:
+  # ollama | openai_compatible. With vllm.enabled the gateway is pointed at the chart's vLLM service.
+  type: openai_compatible
+  ollamaHost: http://ollama.llm.svc.cluster.local:11434
+  openaiCompatBaseUrl: http://vllm.llm.svc.cluster.local:8000/v1
+
+gateway:
+  defaultModel: Qwen/Qwen2.5-7B-Instruct
+  embedModel: nomic-embed-text
+  rateLimitPerMin: 60
+  logPrompts: false
+  redactPrompts: true
+  collectionDefaultAccess: restricted  # open | restricted
+  retrievalMode: hybrid  # vector | bm25 | hybrid
+  reranker: none  # none | lexical
+  modelPolicy: warn  # off | warn | enforce
+  # Model lock file contents (JSON); mounted at /etc/lldk/models.lock.json when set.
+  modelLock: ""
+  encryption:
+    enabled: false
+    auditText: false
+    # Secret holding the keyring file under key "keyring.json" (scripts/keys.py generate).
+    keyringSecret: ""
+  oidc:
+    enabled: false
+    issuer: ""
+    audience: ""
+    jwksUrl: ""
+    algorithms: "RS256,ES256"
+    clockSkewSeconds: 60
+    groupsClaim: groups
+    usernameClaim: sub
+    groupRoles: {}
+  # Extra environment variables (name: value) for settings not listed above.
+  extraEnv: {}
+
+# Secrets: either an existing Secret with keys bootstrapAdminKey, metricsToken, openaiCompatApiKey
+# (any may be absent), or values to create one (prefer an existing Secret managed outside Helm).
+secrets:
+  existingSecret: ""
+  bootstrapAdminKey: ""
+  metricsToken: ""
+  openaiCompatApiKey: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {cpu: "2", memory: 2Gi}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+probes:
+  liveness: {initialDelaySeconds: 10, periodSeconds: 20, timeoutSeconds: 5, failureThreshold: 3}
+  readiness: {initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3}
+  startup: {periodSeconds: 5, failureThreshold: 30}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+networkPolicy:
+  enabled: true
+  # Who may call the gateway (namespaceSelector / podSelector / ipBlock peers, as in a NetworkPolicy).
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+  # Allow egress to the identity provider for JWKS fetches (CIDRs), when OIDC is enabled.
+  oidcEgressCidrs: []
+  # Allow egress to an external inference server (CIDRs and port), e.g. an Ollama host outside the cluster.
+  backendEgressCidrs: []
+  backendPort: 11434
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+vllm:
+  enabled: false
+  image:
+    repository: vllm/vllm-openai
+    tag: "v0.6.6"
+    pullPolicy: IfNotPresent
+  model: Qwen/Qwen2.5-7B-Instruct
+  maxModelLen: 8192
+  extraArgs: []
+  # Secret with key "token" for gated Hugging Face models (optional).
+  hfTokenSecret: ""
+  # Air-gapped: serve from the cache volume only.
+  offline: false
+  gpus: 1
+  resources:
+    requests: {cpu: "4", memory: 24Gi}
+    limits: {memory: 32Gi}
+  cache:
+    existingClaim: ""
+    storageClass: ""
+    size: 100Gi
+  shmSize: 8Gi
+  nodeSelector: {}
+  tolerations:
+    - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}

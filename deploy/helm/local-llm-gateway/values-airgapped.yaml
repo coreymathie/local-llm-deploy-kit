@@ -1,0 +1,28 @@
+# Example: images from an internal registry, models from pre-loaded volumes, no internet egress.
+image:
+  repository: registry.example.internal/local-llm-gateway
+vllm:
+  enabled: true
+  offline: true
+  image:
+    repository: registry.example.internal/vllm-openai
+  cache:
+    existingClaim: vllm-model-cache
+networkPolicy:
+  enabled: true
+  oidcEgressCidrs: [10.20.0.15/32]
+gateway:
+  modelPolicy: enforce
+  encryption:
+    enabled: true
+    auditText: true
+    keyringSecret: lldk-keyring
+  oidc:
+    enabled: true
+    issuer: https://idp.example.internal/realms/corp
+    audience: llm-gateway
+    groupRoles:
+      llm-admins: [admin]
+      staff: [user]
+secrets:
+  existingSecret: lldk-gateway-secrets

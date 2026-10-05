@@ -19,7 +19,11 @@ _RULES: tuple[tuple[str, re.Pattern, str], ...] = (
         "[REDACTED_DOB]",
     ),
     ("email", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"), "[REDACTED_EMAIL]"),
-    ("phone", re.compile(r"\b(?:\+?1[\s.-]?)?\(?[2-9]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b"), "[REDACTED_PHONE]"),
+    (
+        "phone",
+        re.compile(r"(?<!\w)(?:\+?1[\s.-]?)?(?:\([2-9]\d{2}\)|[2-9]\d{2})[\s.-]?\d{3}[\s.-]?\d{4}\b"),
+        "[REDACTED_PHONE]",
+    ),
 )
 
 

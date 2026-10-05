@@ -66,6 +66,7 @@
   .split > * { min-width: 0; }
   @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
   .table-wrap { overflow-x: auto; }
+  body:not(.is-admin) .admin-only { display: none !important; }
 </style>
 </head>
 <body>
@@ -78,24 +79,27 @@
 </header>
 
 <div class="card">
-  <h2>Admin key</h2>
+  <h2>Sign in</h2>
   <div class="row">
-    <input id="adminKey" type="password" placeholder="sk-local-…" style="flex: 1; min-width: 0; width: 100%; max-width: 420px;" />
+    <input id="adminKey" type="password" placeholder="API key (sk-local-…) or OIDC access token" style="flex: 1; min-width: 0; width: 100%; max-width: 420px;" />
     <button class="primary" onclick="save()">Save</button>
     <span class="muted">Kept for this tab only; cleared when you close it.</span>
   </div>
+  <div class="muted" id="whoami" style="margin-top: 8px;">Not signed in. Admin cards appear for the admin role; users and collection readers see what their role allows.</div>
 </div>
 
 <div class="card">
   <h2>Models</h2>
-  <div class="row" style="margin-bottom: 10px;">
+  <div class="row admin-only" style="margin-bottom: 10px;">
     <input id="pullModel" placeholder="llama3.1:8b" style="flex: 1; min-width: 200px;" />
     <button onclick="pullModel()">Pull</button>
+    <button onclick="verifyModels()">Verify against lock file</button>
   </div>
+  <div class="muted admin-only" id="modelPolicy" style="margin-bottom: 8px;"></div>
   <div id="modelsList"></div>
 </div>
 
-<div class="card">
+<div class="card admin-only">
   <h2>Audit log</h2>
   <div class="row" style="margin-bottom: 10px;">
     <span id="chainStatus" class="pill">checking…</span>
@@ -113,7 +117,8 @@
 <div class="card">
   <h2>Documents</h2>
   <p class="muted" style="margin-top: 0;">Private Q&amp;A over your own files. Documents are embedded and searched on this machine;
-    answers cite the passages they came from. Adding or removing documents needs an admin key.</p>
+    answers cite the passages they came from. Adding or removing documents needs the admin role; you only see
+    collections your role or the collection's access list allows.</p>
   <div class="row" style="margin-bottom: 10px;">
     <label for="collection" class="muted">Collection</label>
     <input id="collection" value="handbook" style="width: 180px;" onchange="loadDocs()" />
@@ -121,9 +126,17 @@
   </div>
   <div class="split">
     <div>
+      <div class="admin-only">
       <div class="row" style="margin-bottom: 8px;">
         <input type="file" id="docFile" accept=".pdf,.txt,.md,.markdown,.csv,.json,.html,.htm" />
         <button class="primary" onclick="uploadDoc()">Upload</button>
+      </div>
+      <div class="row" style="margin-bottom: 8px;">
+        <input id="docAcl" placeholder="Access list (optional): group:hr key:hr-bot user:alice" style="flex: 1; min-width: 200px;" />
+      </div>
+      <div class="row" style="margin-bottom: 8px;">
+        <input id="collAcl" placeholder="Collection access list, e.g. group:hr (empty = default access)" style="flex: 1; min-width: 200px;" />
+        <button onclick="saveCollectionAcl()">Set collection access</button>
       </div>
       <details>
         <summary class="muted" style="cursor: pointer;">Or paste text</summary>
@@ -133,10 +146,11 @@
           <div><button onclick="addTextDoc()">Add text</button></div>
         </div>
       </details>
+      </div>
       <div class="muted" id="docStatus" style="margin-top: 8px;"></div>
       <div class="table-wrap">
         <table style="margin-top: 8px;">
-          <thead><tr><th>Title</th><th>Chunks</th><th>Added</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th>Chunks</th><th class="admin-only">Access</th><th>Added</th><th></th></tr></thead>
           <tbody id="docsBody"></tbody>
         </table>
       </div>
@@ -152,7 +166,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card admin-only">
   <h2>API keys</h2>
   <div class="row" style="margin-bottom: 10px;">
     <input id="newLabel" placeholder="Label (e.g., 'web app')" />
@@ -163,6 +177,13 @@
     <table>
       <thead><tr><th>Label</th><th>Key</th><th>Status</th><th>Requests</th><th>Tokens</th><th></th></tr></thead>
       <tbody id="keysBody"></tbody>
+    </table>
+  </div>
+  <h2>Token (OIDC) users</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Last seen</th><th>Requests</th><th>Tokens</th></tr></thead>
+      <tbody id="usersBody"></tbody>
     </table>
   </div>
 </div>
@@ -176,9 +197,23 @@ function toggleTheme() {
   r.setAttribute("data-theme", r.getAttribute("data-theme") === "dark" ? "light" : "dark");
 }
 function getKey() { try { return sessionStorage.getItem("adminKey") || ""; } catch { return ""; } }
+let me = null;
 function save() {
   try { sessionStorage.setItem("adminKey", $("adminKey").value); } catch {}
-  refresh(); loadDocs();
+  whoami().then(() => { refresh(); loadDocs(); });
+}
+async function whoami() {
+  me = null;
+  document.body.classList.remove("is-admin");
+  if (!getKey()) { $("whoami").textContent = "Not signed in."; return; }
+  try {
+    me = await call("GET", "/v1/me");
+    document.body.classList.toggle("is-admin", me.roles.includes("admin"));
+    $("whoami").textContent = `Signed in as ${me.label} (${me.kind === "oidc" ? "OIDC token" : "API key"}) · roles: ${me.roles.join(", ")}`
+      + (me.groups.length ? ` · groups: ${me.groups.join(", ")}` : "");
+  } catch (e) {
+    $("whoami").textContent = "Sign-in failed: " + errText(e);
+  }
 }
 async function call(method, path, body) {
   const r = await fetch(BASE + path, {
@@ -192,20 +227,32 @@ async function call(method, path, body) {
 async function refresh() {
   try {
     const h = await (await fetch(BASE + "/health")).json();
-    $("healthStatus").textContent = "ollama " + (h.ollama ? "✓" : "✗");
+    const up = h.backend_ok ?? h.ollama;
+    $("healthStatus").textContent = (h.backend || "ollama") + " " + (up ? "✓" : "✗");
   } catch {}
   if (!getKey()) { $("keysBody").innerHTML = '<tr><td colspan="6" class="empty">Enter admin key above.</td></tr>'; $("modelsList").innerHTML = ""; return; }
+  if (!me || !me.roles.includes("admin")) {
+    // Users can list models; collection readers can't (the API answers 403 and we say so).
+    try {
+      const models = await call("GET", "/v1/models");
+      $("modelsList").innerHTML = models.data.map(m => `<div class="row" style="padding: 4px 0;"><code>${esc(m.id)}</code></div>`).join("");
+    } catch (e) { $("modelsList").innerHTML = `<div class="muted">${esc(errText(e))}</div>`; }
+    return;
+  }
   try {
     const keys = await call("GET", "/admin/keys");
     $("keysBody").innerHTML = keys.map(k => `
       <tr>
         <td>${esc(k.label)} ${k.is_admin ? '<span class="pill admin">admin</span>' : ''}</td>
-        <td class="key-cell" title="${k.key}">${k.key}</td>
+        <td class="key-cell" title="${esc(k.key)}">${esc(k.key)}</td>
         <td>${k.revoked_at ? '<span class="pill revoked">revoked</span>' : '<span class="pill active">active</span>'}</td>
         <td>${k.requests_total}</td>
         <td>${k.tokens_total}</td>
         <td>${k.revoked_at ? '' : `<button class="danger" onclick="revoke('${k.key}')">Revoke</button>`}</td>
       </tr>`).join("");
+    const users = await call("GET", "/admin/users");
+    $("usersBody").innerHTML = users.length ? users.map(u => `<tr><td>${esc(u.label)}</td><td>${new Date(u.last_seen).toLocaleString()}</td><td>${u.requests_total}</td><td>${u.tokens_total}</td></tr>`).join("")
+      : '<tr><td colspan="4" class="empty">No token users yet (OIDC is off, or nobody has signed in).</td></tr>';
     const v = await call("GET", "/admin/audit/verify");
     $("chainStatus").className = "pill " + (v.ok ? "active" : "revoked");
     $("chainStatus").textContent = v.ok ? "chain intact" : "TAMPERED at line " + v.bad_line;
@@ -213,21 +260,29 @@ async function refresh() {
     const events = await call("GET", "/admin/audit/recent?limit=25");
     $("auditBody").innerHTML = events.length ? events.map(e => {
       const p = e.payload || {};
-      const detail = p.title ? `${p.title} (${p.collection})`
+      const detail = p.trigger ? `${p.trigger}: ${p.ok ? "all pinned models verified" : "problems " + JSON.stringify(p.problems || p.error || {})}`
+        : p.title ? `${p.title} (${p.collection})`
         : p.collection ? `${p.key || ""} asked ${p.collection}`
         : p.model || p.label || p.key || "";
       return `<tr><td>${new Date(e.ts).toLocaleString()}</td><td>${esc(e.event)}</td><td>${esc(String(detail))}</td></tr>`;
     }).join("") : '<tr><td colspan="3" class="empty">No audit events yet.</td></tr>';
     try {
       const models = await call("GET", "/v1/models");
+      let ver = {};
+      try { ver = await call("GET", "/admin/models/verification"); } catch {}
+      const st = (ver.models || {});
+      $("modelPolicy").textContent = `Model policy: ${ver.policy || "?"} · lock file: ${ver.lock_file || "none"}`
+        + (ver.error ? ` · ${ver.error}` : "") + (ver.checked_at ? ` · checked ${new Date(ver.checked_at * 1000).toLocaleTimeString()}` : "");
+      const pill = (x) => !x ? "" : `<span class="pill ${x.status === "verified" ? "active" : (x.status === "unpinned" || x.status === "unverifiable") ? "admin" : "revoked"}" title="${esc(x.detail || "")}">${esc(x.status)}</span>`;
       $("modelsList").innerHTML = models.data.length
-        ? models.data.map(m => `<div class="row" style="padding: 4px 0;"><code>${esc(m.id)}</code></div>`).join("")
+        ? models.data.map(m => `<div class="row" style="padding: 4px 0;"><code>${esc(m.id)}</code> ${pill(st[m.id])}</div>`).join("")
+          + Object.values(st).filter(x => x.status === "missing").map(x => `<div class="row" style="padding: 4px 0;"><code>${esc(x.name)}</code> ${pill(x)}</div>`).join("")
         : '<div class="muted">No models installed. Pull one above.</div>';
     } catch {
-      $("modelsList").innerHTML = '<div class="muted">Ollama is not reachable. Start it, then refresh.</div>';
+      $("modelsList").innerHTML = '<div class="muted">The model server is not reachable. Start it, then refresh.</div>';
     }
   } catch (e) {
-    $("keysBody").innerHTML = `<tr><td colspan="6" class="empty">${e.message}</td></tr>`;
+    $("keysBody").innerHTML = `<tr><td colspan="6" class="empty">${esc(e.message)}</td></tr>`;
   }
 }
 async function createKey() {
@@ -239,6 +294,10 @@ async function createKey() {
 async function revoke(key) {
   if (!confirm("Revoke this key?")) return;
   await call("DELETE", "/admin/keys/" + encodeURIComponent(key));
+  refresh();
+}
+async function verifyModels() {
+  try { await call("POST", "/admin/models/verify"); } catch (e) { alert(errText(e)); }
   refresh();
 }
 async function pullModel() {
@@ -261,22 +320,33 @@ async function loadDocs() {
       `<button class="chip ${c.name === coll() ? "on" : ""}" data-name="${esc(c.name)}" onclick="pickCollection(this.dataset.name)">${esc(c.name)} · ${c.documents}</button>`
     ).join("");
     const docs = await call("GET", "/v1/collections/" + encodeURIComponent(coll()) + "/documents");
+    loadCollectionAcl();
     $("docsBody").innerHTML = docs.length ? docs.map(d => `
       <tr>
         <td>${esc(d.title)}</td>
         <td>${d.chunks}</td>
+        <td class="admin-only">${d.acl && d.acl.length ? esc(d.acl.join(" ")) : '<span class="muted">collection default</span>'}</td>
         <td><span title="${esc(d.added_by)}">${new Date(d.created_at).toLocaleDateString()}</span></td>
-        <td><button class="danger" data-id="${esc(d.id)}" data-title="${esc(d.title)}" onclick="removeDoc(this.dataset.id, this.dataset.title)">Remove</button></td>
-      </tr>`).join("") : '<tr><td colspan="4" class="empty">No documents in this collection yet.</td></tr>';
+        <td class="admin-only"><button class="danger" data-id="${esc(d.id)}" data-title="${esc(d.title)}" onclick="removeDoc(this.dataset.id, this.dataset.title)">Remove</button></td>
+      </tr>`).join("") : '<tr><td colspan="5" class="empty">No documents in this collection yet.</td></tr>';
   } catch (e) {
     $("docsBody").innerHTML = `<tr><td colspan="4" class="empty">${esc(errText(e))}</td></tr>`;
   }
 }
 function pickCollection(name) { $("collection").value = name; loadDocs(); }
+async function loadCollectionAcl() {
+  if (!me || !me.roles.includes("admin")) return;
+  try { $("collAcl").value = (await call("GET", "/admin/collections/" + encodeURIComponent(coll()) + "/acl")).principals.join(" "); } catch {}
+}
+async function saveCollectionAcl() {
+  const principals = $("collAcl").value.trim().split(/[\s,]+/).filter(Boolean);
+  try { await call("PUT", "/admin/collections/" + encodeURIComponent(coll()) + "/acl", { principals }); setStatus("Collection access saved."); }
+  catch (e) { setStatus(errText(e), true); }
+}
 async function uploadDoc() {
   const f = $("docFile").files[0]; if (!f) { setStatus("Choose a file first.", true); return; }
   setStatus("Reading and embedding " + f.name + "…");
-  const form = new FormData(); form.append("file", f);
+  const form = new FormData(); form.append("file", f); form.append("acl", $("docAcl").value.trim());
   const r = await fetch(BASE + "/v1/collections/" + encodeURIComponent(coll()) + "/documents", {
     method: "POST", headers: { "Authorization": "Bearer " + getKey() }, body: form,
   });
@@ -290,7 +360,8 @@ async function addTextDoc() {
   if (!title || !text.trim()) { setStatus("Add a title and some text.", true); return; }
   setStatus("Embedding " + title + "…");
   try {
-    const d = await call("POST", "/v1/collections/" + encodeURIComponent(coll()) + "/documents/text", { title, text });
+    const acl = $("docAcl").value.trim().split(/[\s,]+/).filter(Boolean);
+    const d = await call("POST", "/v1/collections/" + encodeURIComponent(coll()) + "/documents/text", { title, text, acl });
     setStatus(`Added ${d.title}: ${d.chunks} passages indexed.`);
     $("docTitle").value = ""; $("docText").value = ""; loadDocs();
   } catch (e) { setStatus(errText(e), true); }
@@ -309,7 +380,7 @@ async function removeDoc(id, title) {
 }
 function sourcesHtml(list) {
   return list.map(s => `<div class="source" id="src-${s.n}"><strong>[${s.n}] ${esc(s.title)}</strong>
-    <span class="muted">passage ${s.chunk + 1} · match ${s.score.toFixed(2)}</span>${esc(s.excerpt)}${s.excerpt.length >= 400 ? "…" : ""}</div>`).join("");
+    <span class="muted">passage ${s.chunk + 1} · ${Object.entries(s.scores || {}).map(([k, v]) => esc(k) + " " + Number(v).toFixed(3)).join(" · ") || "score " + s.score.toFixed(3)}</span>${esc(s.excerpt)}${s.excerpt.length >= 400 ? "…" : ""}</div>`).join("");
 }
 async function askDocs() {
   const q = $("question").value.trim(); if (!q) return;
@@ -318,7 +389,7 @@ async function askDocs() {
     const r = await call("POST", "/v1/collections/" + encodeURIComponent(coll()) + "/ask", { question: q });
     const answer = esc(r.answer).replace(/\[(\d+)\]/g, (m, n) => `<a class="cite" href="#src-${n}">[${n}]</a>`);
     $("askOut").innerHTML = `<div class="answer">${answer}</div>
-      <div class="muted">${esc(r.model)} · ${r.usage.total_tokens} tokens · logged to the audit trail</div>
+      <div class="muted">${esc(r.model)} · ${r.usage.total_tokens} tokens · retrieval ${esc((r.retrieval || {}).mode || "")} · logged to the audit trail</div>
       ${sourcesHtml(r.sources.filter(s => s.cited))}
       ${r.sources.some(s => !s.cited) ? `<details class="also"><summary class="muted">Also retrieved, not cited (${r.sources.filter(s => !s.cited).length})</summary>${sourcesHtml(r.sources.filter(s => !s.cited))}</details>` : ""}`;
   } catch (e) {
@@ -326,8 +397,7 @@ async function askDocs() {
   }
 }
 $("adminKey").value = getKey();
-refresh();
-loadDocs();
+whoami().then(() => { refresh(); loadDocs(); });
 setInterval(refresh, 15000);
 </script>
 </body>

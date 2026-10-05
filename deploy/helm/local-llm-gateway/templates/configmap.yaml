@@ -1,0 +1,59 @@
+{{- if and (or .Values.gateway.encryption.enabled .Values.gateway.encryption.auditText) (not .Values.gateway.encryption.keyringSecret) }}
+{{- fail "gateway.encryption needs gateway.encryption.keyringSecret (a Secret with key keyring.json)" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lldk.fullname" . }}
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+data:
+  BACKEND: {{ .Values.backend.type | quote }}
+  OLLAMA_HOST: {{ .Values.backend.ollamaHost | quote }}
+  OPENAI_COMPAT_BASE_URL: {{ include "lldk.openaiCompatBaseUrl" . | quote }}
+  GATEWAY_HOST: "0.0.0.0"
+  GATEWAY_PORT: {{ .Values.service.port | quote }}
+  GATEWAY_DB_PATH: /data/gateway.db
+  GATEWAY_LOG_DIR: /data/logs
+  GATEWAY_DEFAULT_MODEL: {{ .Values.gateway.defaultModel | quote }}
+  GATEWAY_EMBED_MODEL: {{ .Values.gateway.embedModel | quote }}
+  GATEWAY_RATE_LIMIT_PER_MIN: {{ .Values.gateway.rateLimitPerMin | quote }}
+  GATEWAY_LOG_PROMPTS: {{ .Values.gateway.logPrompts | quote }}
+  GATEWAY_REDACT_PROMPTS: {{ .Values.gateway.redactPrompts | quote }}
+  GATEWAY_COLLECTION_DEFAULT_ACCESS: {{ .Values.gateway.collectionDefaultAccess | quote }}
+  GATEWAY_RETRIEVAL_MODE: {{ .Values.gateway.retrievalMode | quote }}
+  GATEWAY_RERANKER: {{ .Values.gateway.reranker | quote }}
+  GATEWAY_MODEL_POLICY: {{ .Values.gateway.modelPolicy | quote }}
+  {{- if .Values.gateway.modelLock }}
+  GATEWAY_MODEL_LOCK_FILE: /etc/lldk/lock/models.lock.json
+  {{- end }}
+  GATEWAY_ENCRYPT_AT_REST: {{ .Values.gateway.encryption.enabled | quote }}
+  GATEWAY_AUDIT_ENCRYPT_TEXT: {{ .Values.gateway.encryption.auditText | quote }}
+  {{- if .Values.gateway.encryption.keyringSecret }}
+  GATEWAY_ENCRYPTION_KEY_FILE: /etc/lldk/keyring/keyring.json
+  {{- end }}
+  GATEWAY_OIDC_ENABLED: {{ .Values.gateway.oidc.enabled | quote }}
+  {{- if .Values.gateway.oidc.enabled }}
+  GATEWAY_OIDC_ISSUER: {{ required "gateway.oidc.issuer is required when OIDC is enabled" .Values.gateway.oidc.issuer | quote }}
+  GATEWAY_OIDC_AUDIENCE: {{ required "gateway.oidc.audience is required when OIDC is enabled" .Values.gateway.oidc.audience | quote }}
+  GATEWAY_OIDC_JWKS_URL: {{ .Values.gateway.oidc.jwksUrl | quote }}
+  GATEWAY_OIDC_ALGORITHMS: {{ .Values.gateway.oidc.algorithms | quote }}
+  GATEWAY_OIDC_CLOCK_SKEW_SECONDS: {{ .Values.gateway.oidc.clockSkewSeconds | quote }}
+  GATEWAY_OIDC_GROUPS_CLAIM: {{ .Values.gateway.oidc.groupsClaim | quote }}
+  GATEWAY_OIDC_USERNAME_CLAIM: {{ .Values.gateway.oidc.usernameClaim | quote }}
+  GATEWAY_OIDC_GROUP_ROLES: {{ .Values.gateway.oidc.groupRoles | toJson | quote }}
+  {{- end }}
+  {{- range $name, $value := .Values.gateway.extraEnv }}
+  {{ $name }}: {{ $value | quote }}
+  {{- end }}
+{{- if .Values.gateway.modelLock }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lldk.fullname" . }}-model-lock
+  labels:
+    {{- include "lldk.labels" . | nindent 4 }}
+data:
+  models.lock.json: {{ .Values.gateway.modelLock | quote }}
+{{- end }}

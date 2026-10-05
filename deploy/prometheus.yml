@@ -1,0 +1,12 @@
+# Example Prometheus scrape config for the gateway's /metrics endpoint.
+# If GATEWAY_METRICS_TOKEN is set on the gateway, put the same value in
+# credentials_file (or use `authorization: {credentials: ...}`).
+scrape_configs:
+  - job_name: llm-gateway
+    metrics_path: /metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["127.0.0.1:8080"]
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/gateway-metrics-token

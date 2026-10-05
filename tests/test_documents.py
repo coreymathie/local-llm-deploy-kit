@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from gateway import audit, main, rag
+from gateway import audit, backends, main, rag
 
 from .conftest import ADMIN, fake_ollama, new_key
 
@@ -43,7 +43,7 @@ def chat_log(client, monkeypatch):
         kwargs.pop("transport", None)
         return httpx.AsyncClient(transport=transport, **kwargs)
 
-    for module in (main, rag):
+    for module in (main, backends):
         monkeypatch.setattr(module.httpx, "AsyncClient", async_client)
     return sent
 
