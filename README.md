@@ -1,31 +1,78 @@
-# local-llm-deploy-kit
+# Private LLM Platform
 
-[![ci](https://github.com/coreymathie/local-llm-deploy-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/coreymathie/local-llm-deploy-kit/actions/workflows/ci.yml)
+[![ci](https://github.com/coreymathie/private-llm-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/coreymathie/private-llm-platform/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-A private LLM gateway for teams whose data can't leave the building. It puts an **OpenAI-compatible
-API** in front of a local model server (**Ollama** on a laptop or small server, or **vLLM / SGLang /
-TGI / NVIDIA NIM** on a GPU host) and adds the controls an operations or compliance team asks for first:
-per-application API keys and **OIDC single sign-on with group-based roles**, rate limits, PII redaction, a
-**tamper-evident audit log**, **document Q&A with citations**, Prometheus metrics, OpenTelemetry GenAI spans,
-and an admin page.
+**A private ChatGPT for your documents, with the access control, audit trail and model governance a
+compliance team asks for.** An OpenAI-compatible gateway in front of a local model server (**Ollama** on a
+laptop or small server, or **vLLM / SGLang / TGI / NVIDIA NIM** on a GPU host), cited answers over
+permission-aware hybrid retrieval, per-application API keys and **OIDC single sign-on with group-based
+roles**, rate limits, PII redaction, a **tamper-evident audit log**, model pinning with a CycloneDX ML-BOM,
+Prometheus metrics, OpenTelemetry GenAI spans, and a product console.
 
-**▶ [Try it in your browser](https://coreymathie.github.io/local-llm-deploy-kit/demo/)**: the gateway's
-real Python modules (keys and rate limiting, redaction, the audit hash chain, roles and permission-aware
-retrieval, citations)
-run in your browser through Pyodide. Nothing leaves the page. There is no LLM in the demo; answers are
-extractive and labelled as such.
+**▶ [Open the live console](https://coreymathie.github.io/private-llm-platform/demo/)**: the gateway's real
+Python modules (keys and rate limiting, roles and permission-aware retrieval, citations, the audit hash
+chain, policy validation, model pinning, the RAG eval) run in your browser through Pyodide. Nothing leaves
+the page. There is no LLM in the browser; answers are extractive and labelled as simulated.
+
+![The console's Chat screen: the same question asked as an HR user and an engineer, side by side, with cited sources](docs/img/console.png)
 
 ---
 
 ## Contents
 
-[Problem](#the-problem) · [Architecture](#architecture) · [Key decisions](#key-decisions) ·
+[Console](#console) · [Problem](#the-problem) · [Architecture](#architecture) · [Key decisions](#key-decisions) ·
 [Security and governance](#security-and-governance) · [Identity and roles](#identity-and-roles) · [Quality](#quality) ·
 [Observability](#observability) · [Benchmarks](#benchmarks) · [Failure modes](#failure-modes) ·
 [Quickstart](#quickstart) · [Document Q&A](#document-qa) · [Audit log](#the-audit-log) ·
 [Configuration](#configuration) · [Roadmap](#roadmap)
+
+## Console
+
+One set of static files in [`demo/`](demo/) (`index.html`, `app.js`, `screens.js`, `adapters.js`, `ui.js`,
+`styles.css`) runs in two modes:
+
+- **Demo** (GitHub Pages): `DemoAdapter` loads Pyodide 0.26.4 and runs the gateway's own modules through
+  `demo/engine.py`, with a simulated backend (hashed bag-of-words embeddings, extractive answers, a stand-in
+  Ollama model inventory). The header says *Demo · runs in your browser*.
+- **Live**: the gateway serves the same files at `/console/` and `LiveAdapter` calls its HTTP API with the
+  admin key or token you enter on Settings (kept in memory, or in `sessionStorage` if you ask). The header
+  says *Live · connected to &lt;host&gt;*. Mode comes from `GET ./api-mode` (a static file says `demo`; the
+  gateway answers `live`) or `?mode=demo|live`.
+
+| Screen | What it does |
+|---|---|
+| Overview | Requests, identities, collections and documents, retrieval quality (from the eval), audit chain status, access decisions; activity and audit-event charts; guided "what to try" cards |
+| Chat | ChatGPT-style chat with numbered citations and a source panel (score components, access rule, cited or not, injection flags); ask as any persona or API key, compare two identities side by side, switch retrieval mode, lexical reranker and passage count per request, or use model-only chat (readers get 403) |
+| Documents | Collections and the document library: paste or upload, per-collection and per-document access-list editor, and an access matrix of which caller can read which document and the rule that decided it |
+| Users & Keys | API keys with groups, per-minute usage against the rate limit, burst test, revoke; SSO group-to-role mapping and token users |
+| Audit | The hash-chained log with filters and search; each row opens a decision timeline (authenticate, access decision, retrieval, sources, generation, answer, hashes). Demo mode adds tamper/restore |
+| Models | Backend health, served models, verification against the lock file, off/warn/enforce policy, lock-file validation, ML-BOM model components. Demo mode adds pin, simulated re-pull and a policy check |
+| Policies | The runtime policy (group roles, default collection access, retrieval, rate limit, model policy) as JSON, validated with the gateway's own types and `identity.check_role`, applied and audited, with a scenario re-run before and after |
+| Evals | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json`, misses per question; demo mode re-runs the eval in the browser and compares |
+| Settings | Mode, credential (live), modules running in the tab (demo), and what is simulated |
+
+A five-step guided tour runs on the first visit. **Run it live:**
+
+```bash
+docker compose up        # then open http://localhost:8080/console/
+docker compose logs gateway | grep "Bootstrap admin"     # the admin key to paste on Settings
+```
+
+That stack needs no model or GPU: the gateway talks to `mock-llm`, which is
+[`scripts/mock_openai_server.py`](scripts/mock_openai_server.py) in **simulated** mode (extractive answers,
+hashed embeddings; not a language model). Overview's *Load sample data* adds the sample policies and three
+keys through the API. For real answers, Ollama stays the default backend:
+`docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`, then pull `llama3.1:8b` and
+`nomic-embed-text` (see the top of `docker-compose.yml`). The older single-file admin page is still served
+at `/admin`.
+
+New endpoints for the console (all admin-only): `GET /admin/overview`, `GET /admin/audit/entries`,
+`GET /admin/access-matrix?collection=`, `GET /admin/policy`, `POST /admin/policy/validate`,
+`PUT /admin/policy` (in memory, audited as `policy_changed`; a restart reads the environment again),
+`GET /admin/rate-limits`, `POST /admin/models/lock/validate`, `GET /admin/models/mlbom`; plus
+`GET /console/api-mode` and per-request `retrieval_mode` / `reranker` on `/ask`.
 
 ## The problem
 
@@ -45,7 +92,7 @@ installs on a laptop and also fronts a GPU inference server.
 flowchart LR
   subgraph Clients
     A[Apps / OpenAI SDKs]
-    U[Admin page]
+    U[Console / admin page]
     P[Prometheus]
   end
   subgraph Gateway["Gateway (FastAPI, one process)"]
@@ -149,7 +196,7 @@ access token and shows only the cards the role allows. A valid token whose group
 
 ## Quality
 
-- **186 automated tests** (89 through v0.5 plus 97 added in v0.6; parametrized cases counted individually),
+- **218 automated tests** (186 through v0.6 plus 32 added in v0.7; parametrized cases counted individually),
   all passing, run in CI with `ruff check`, `ruff format --check`, `shellcheck` and (CI only) `helm lint`.
 - Upstream HTTP is mocked for both backends: Ollama's native API and the OpenAI wire format (chat,
   SSE streaming with usage, embeddings, models, errors before the first token).
@@ -169,8 +216,10 @@ access token and shows only the cards the role allows. A valid token whose group
 - Docs are tested too: every `tests/…::test_name` and `gateway/…::symbol` referenced in `docs/` and this
   README must exist (`tests/test_docs.py`), and every metric the Grafana dashboard queries must be
   exported (`tests/test_metrics.py`).
-- The browser demo's engine runs under CPython in the suite (`tests/test_demo_engine.py`), and
-  `scripts/demo_smoke.py` drives the real page headlessly with Playwright (17 checks across all five panels).
+- The console's browser engine runs under CPython in the suite (`tests/test_demo_engine.py`,
+  `tests/test_console_engine.py`), and `scripts/demo_smoke.py` drives the real console headlessly with
+  Playwright in both modes: every screen and its key interaction in demo mode, then the gateway and the
+  simulated backend under uvicorn in live mode (35 checks, no console errors, no horizontal scroll at 390 px).
 
 | Test file | Covers |
 |---|---|
@@ -185,6 +234,7 @@ access token and shows only the cards the role allows. A valid token whose group
 | `test_backends.py` | Both backends: chat, streaming + `include_usage`, embeddings order, models, upstream auth, 501 pull, error mapping, pooled HTTP client |
 | `test_metrics.py`, `test_telemetry.py` | `/metrics` labels (route templates, key labels, never key values), tokens, TTFT, 401/429, token protection; GenAI span attributes, no prompt text, no-op without OTel |
 | `test_injection_flags.py`, `test_redact.py` | Injection heuristics (payloads flagged, ordinary text not); redaction patterns |
+| `test_console.py`, `test_console_engine.py` | Console endpoints (overview, audit entries, access matrix, runtime policy with validation, effect and audit, rate-limit window, lock validation, ML-BOM), admin-only access, per-request retrieval switches, the simulated mock backend and the compose stack end to end, eval data drift, page assets; the browser engine's console calls (pin, re-pull, enforce, policy, in-browser eval) |
 | `test_loadtest.py`, `test_demo_engine.py`, `test_deploy_config.py`, `test_docs.py`, `test_ingest_folder.py` | Load-test math and an in-process run; demo engine; compose/profile sanity; doc references; folder ingest |
 
 ## Observability
@@ -256,17 +306,17 @@ throughput on the same host). Details, hardware and reproduction steps are in th
 
 **macOS**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coreymathie/local-llm-deploy-kit/main/scripts/install_macos.sh | bash
+curl -fsSL https://raw.githubusercontent.com/coreymathie/private-llm-platform/main/scripts/install_macos.sh | bash
 ```
 
 **Linux**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coreymathie/local-llm-deploy-kit/main/scripts/install_linux.sh | bash
+curl -fsSL https://raw.githubusercontent.com/coreymathie/private-llm-platform/main/scripts/install_linux.sh | bash
 ```
 
 **Windows** (elevated PowerShell)
 ```powershell
-iwr -useb https://raw.githubusercontent.com/coreymathie/local-llm-deploy-kit/main/scripts/install_windows.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/coreymathie/private-llm-platform/main/scripts/install_windows.ps1 | iex
 ```
 
 Each installer checks prerequisites, installs Ollama if it's missing, pulls `llama3.1:8b` and
@@ -275,25 +325,27 @@ opens the admin page.
 
 **Manual / development**
 ```bash
-git clone https://github.com/coreymathie/local-llm-deploy-kit.git
-cd local-llm-deploy-kit
+git clone https://github.com/coreymathie/private-llm-platform.git
+cd private-llm-platform
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env                       # or: cp profiles/healthcare.env .env
 uvicorn gateway.main:app --host 127.0.0.1 --port 8080
 ```
 
-**Docker:** `docker compose up -d` (Ollama and the gateway, both bound to localhost).
+**Docker:** `docker compose up -d` starts the gateway and console on `http://localhost:8080/console/`
+with a simulated backend (no model; see [Console](#console)). For real answers from Ollama:
+`docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`. Ports bind to localhost.
 
 **Kubernetes:** Helm chart in [`deploy/helm/local-llm-gateway`](deploy/helm/local-llm-gateway) (gateway,
 optional vLLM on NVIDIA GPUs, PVC, Secrets, probes, NetworkPolicy, ServiceMonitor), and
 `scripts/airgap_bundle.sh` for offline installs. See [docs/kubernetes.md](docs/kubernetes.md), including
 what was and wasn't validated (`helm lint` could not be run in the build environment; CI runs it).
 
-**vLLM on an NVIDIA GPU** (opt-in compose profile; the default stack is unchanged):
+**vLLM on an NVIDIA GPU** (opt-in compose profile):
 ```bash
-BACKEND=openai_compatible VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct GATEWAY_DEFAULT_MODEL=Qwen/Qwen2.5-7B-Instruct \
-  docker compose --profile vllm up -d
+OPENAI_COMPAT_BASE_URL=http://vllm:8000/v1 VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct \
+  GATEWAY_DEFAULT_MODEL=Qwen/Qwen2.5-7B-Instruct docker compose --profile vllm up -d
 ```
 Or point the gateway at any OpenAI-compatible server you already run:
 `BACKEND=openai_compatible OPENAI_COMPAT_BASE_URL=http://gpu-host:8000/v1 OPENAI_COMPAT_API_KEY=...`.
@@ -393,7 +445,7 @@ curl -X PUT localhost:8080/admin/collections/handbook/acl -H "Authorization: Bea
 | `DELETE /v1/collections/{c}/documents/{id}` | admin | Remove a document and its passages |
 | `PUT /v1/collections/{c}/documents/{id}/acl` | admin | Replace a document's access list (`{"principals": [...]}`; `[]` inherits the collection's) |
 | `GET`/`PUT /admin/collections/{c}/acl` | admin | Read or replace a collection's access list |
-| `POST /v1/collections/{c}/ask` | any caller with read access | `{"question", "top_k"?, "model"?}` → cited answer from the documents the caller may read |
+| `POST /v1/collections/{c}/ask` | any caller with read access | `{"question", "top_k"?, "model"?, "retrieval_mode"?, "reranker"?}` → cited answer from the documents the caller may read, with `timings_ms` |
 | `POST /v1/embeddings` | any key | OpenAI-shaped embeddings |
 
 ## Model supply chain
@@ -424,10 +476,11 @@ served at that moment: compare digests with the publisher's before relying on th
 | `document_question` | Always: which caller asked which collection, the access decision, and which passages were retrieved, cited and flagged (with the rule that admitted each). Question and answer text follow the prompt-logging and redaction settings. |
 | `document_question_denied` | A caller asked a collection whose documents it may not read |
 | `collection_acl_changed`, `document_acl_changed` | Access-list changes, before and after, with who made them |
+| `policy_changed` | Runtime policy applied from the console (`PUT /admin/policy`), before and after, with who applied it |
 
 Each entry includes the SHA-256 of the previous entry. Editing or deleting a line breaks the chain from
 that point. `GET /admin/audit/verify` (and the admin page) reports `chain intact` or the first tampered
-line number. Archive the file to WORM storage; see [`docs/compliance.md`](docs/compliance.md).
+line number; the console's Audit screen shows each entry as a decision timeline. Archive the file to WORM storage; see [`docs/compliance.md`](docs/compliance.md).
 
 ## Configuration
 
@@ -495,17 +548,18 @@ benchmarks on real hardware.
 ## Layout
 
 ```
-gateway/     main.py (routes), backends.py (Ollama / OpenAI-compatible), rag.py (documents, retrieval),
+gateway/     main.py (routes), console.py (console read models, runtime policy), backends.py (Ollama / OpenAI-compatible), rag.py (documents, retrieval),
              retrieval.py (BM25, RRF, rerankers), identity.py (OIDC, roles), crypto.py (encryption at rest),
              supply_chain.py (model pinning), auth.py, store.py (SQLite), audit.py (hash chain), redact.py, metrics.py, telemetry.py, config.py
-admin-ui/    index.html (single-file admin page)
-demo/        browser demo (index.html, engine.py, shims.py, sample policies) for GitHub Pages
+admin-ui/    index.html (single-file admin page, /admin)
+demo/        the console (index.html, app.js, screens.js, adapters.js, ui.js, styles.css): GitHub Pages demo
+             via Pyodide (engine.py, shims.py, sample policies, data/rag_eval.json) and /console in live mode
 deploy/      grafana-dashboard.json, prometheus.yml, helm/local-llm-gateway (chart)
 Dockerfile   gateway image (non-root, state under /data)
 scripts/     installers, ingest_folder.py, loadtest.py, mock_openai_server.py, demo_smoke.py, rag_eval.py,
              keys.py, backup.py, restore.py, bench_storage.py, pin_models.py, mlbom.py, airgap_bundle.sh
 evals/       golden set (fictional documents, questions, access lists) and CI thresholds
-profiles/    healthcare.env, finance.env
+profiles/    healthcare.env, finance.env, compose-ollama.env
 docs/        adr/, threat-model, controls, operations, kubernetes, compliance, benchmarks, quickstart, enterprise, Windows notes
 ```
 
@@ -515,11 +569,14 @@ docs/        adr/, threat-model, controls, operations, kubernetes, compliance, b
 pip install -r requirements.txt ruff opentelemetry-sdk
 ruff check gateway tests scripts demo && ruff format --check gateway tests scripts demo && pytest -q
 python scripts/rag_eval.py --check   # retrieval eval gate (also run inside pytest)
-python scripts/demo_smoke.py   # optional: headless browser test of the demo (needs playwright + chromium)
+python scripts/rag_eval.py --console-data   # refresh demo/data/rag_eval.json (a test checks it matches)
+python scripts/demo_smoke.py --live          # optional: headless browser test of both console modes
+                                             # (needs playwright + chromium; --pyodide-dir for an offline Pyodide)
 ```
 
-To publish the demo, enable GitHub Pages for the repository (Settings → Pages → deploy from the `main`
-branch, root folder). `.nojekyll` makes Pages serve the Python files as-is.
+To publish the console, enable GitHub Pages for the repository (Settings → Pages → deploy from the `main`
+branch, root folder); it is then at `https://coreymathie.github.io/private-llm-platform/demo/`.
+`.nojekyll` makes Pages serve the Python files as-is.
 
 ## License
 
