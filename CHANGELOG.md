@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.7.0] — 2026-10
+
+The project is now **Private LLM Platform** (repository `private-llm-platform`, formerly
+`local-llm-deploy-kit`). Python package and import paths (`gateway`, `scripts`) and the Helm chart name are
+unchanged.
+
+Upgrade notes (behavior changes; details under Changed)
+- `docker compose up` now starts the gateway with a **simulated backend** (`mock-llm`, no model) instead of
+  Ollama. For real answers: `docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`.
+  The gateway's own default backend is still Ollama (`BACKEND=ollama` in `gateway/config.py`, the installers
+  and the Helm chart). Container names changed from `lldk-*` to `plp-*`.
+- Renamed paths in the healthcare and finance profiles (`/var/lib/private-llm-platform`,
+  `/var/log/private-llm-platform`, `/etc/private-llm-platform`) and the installers' default directory
+  (`~/.private-llm-platform`); move existing state or set the old paths explicitly.
+
+Added
+- **Product console** in `demo/` (`index.html`, `app.js`, `screens.js`, `adapters.js`, `ui.js`, `styles.css`),
+  replacing the single-page demo at the same URL. Screens: Overview (KPIs, activity and audit-event charts,
+  guided cards), Chat (cited answers with a source panel, persona/key switcher, side-by-side compare,
+  per-request retrieval mode and reranker, model-only chat), Documents (library, paste/upload, collection and
+  document access lists, access matrix), Users & Keys (keys with groups, rate-limit window, burst test,
+  revoke; SSO group-to-role mapping, token users), Audit (filterable log, per-entry decision timeline,
+  demo-only tamper/restore), Models (verification, off/warn/enforce, lock validation, ML-BOM), Policies
+  (validate/apply the runtime policy with a before/after scenario), Evals (rag_eval scorecard against the
+  thresholds), Settings. Hash routing with deep links, a five-step guided tour, light and dark themes,
+  phone layout. Inline-SVG charts, no chart library.
+- **Two modes from one codebase**: `DemoAdapter` runs the gateway's modules in Pyodide 0.26.4 (now also
+  `console.py`, `supply_chain.py`, `scripts/mlbom.py`, `scripts/rag_eval.py`), with a simulated Ollama model
+  inventory for the supply-chain screens; `LiveAdapter` calls the gateway's HTTP API with an admin key or
+  token entered in Settings. Mode from `GET ./api-mode` or `?mode=`.
+- The gateway serves the console at **`/console`** (static files, no secrets; every data call needs a bearer
+  credential) and `GET /console/api-mode`.
+- `gateway/console.py`: overview counters, audit rows with line numbers and summaries, access matrix, and the
+  runtime-editable policy (validated with the `Settings` field types and `identity.check_role`), shared by
+  the API and the browser engine.
+- Admin endpoints: `GET /admin/overview`, `GET /admin/audit/entries`, `GET /admin/access-matrix`,
+  `GET /admin/policy`, `POST /admin/policy/validate`, `PUT /admin/policy` (in memory, audited as
+  `policy_changed`), `GET /admin/rate-limits`, `POST /admin/models/lock/validate`, `GET /admin/models/mlbom`.
+- `/v1/collections/{c}/ask` accepts `retrieval_mode` and `reranker` per request (ranking only; access is
+  unchanged) and returns `timings_ms` (access, retrieval, generation), also recorded in the audit entry.
+- `scripts/mock_openai_server.py` `MOCK_MODE=simulated`: hashed embeddings and extractive, cited answers
+  from the demo engine, so the live console works with no model. Default mode (canned tokens) unchanged.
+- `scripts/rag_eval.py --console-data` writes `demo/data/rag_eval.json` (a test checks it matches a fresh
+  run); `evaluate_async()` for callers inside an event loop (the console re-runs the eval in the browser).
+- `supply_chain.parse_lock()` validates a parsed lock document (used by `load_lock()` and the console).
+- `scripts/demo_smoke.py` rewritten: every screen in demo mode with its key interaction, plus `--live`
+  (gateway and simulated mock backend under uvicorn), console-error check, no horizontal scroll at 390 px
+  on every screen, desktop and mobile screenshots. CI job `console-smoke` (live mode required, demo mode
+  allowed to fail on CDN problems).
+- `profiles/compose-ollama.env`; `docs/img/console.png`.
+- Tests: `tests/test_console.py` (endpoints, admin-only access, policy effects and audit, retrieval
+  overrides, simulated mock, compose stack end to end, eval data drift, page assets) and
+  `tests/test_console_engine.py` (the browser engine's console calls).
+
+Changed
+- `docker-compose.yml`: default services `gateway` + `mock-llm`; `ollama` and `vllm` are profiles; the
+  gateway image is built from the `Dockerfile` (which now includes `demo/`).
+- Admin page title and a link to the console; `/admin` keeps working.
+- Rate limit in the browser demo is 30/min (was 10).
+- Renamed references to the repository (README, badges, Pages URL, Helm chart home, installers, ML-BOM
+  application component, OpenTelemetry tracer name, Grafana dashboard title, air-gap bundle source archive).
+
 ## [0.6.0] — 2026-10
 
 Upgrade notes (behavior changes; details under Changed)
