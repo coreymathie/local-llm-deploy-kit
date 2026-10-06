@@ -377,7 +377,7 @@ python scripts/ingest_folder.py ./employee-handbook --collection handbook   # re
 
 Or upload from the admin page's **Documents** card:
 
-![Documents card: a cited answer from an employee handbook collection](docs/admin-documents.png)
+![Documents card: the sample policies collection with per-document access lists, and a cited answer to a hotel-cap question](docs/admin-documents.png)
 
 Then ask, with any key:
 
