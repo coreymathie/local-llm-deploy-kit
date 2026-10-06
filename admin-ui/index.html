@@ -1,23 +1,27 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <title>Private LLM Platform — Admin</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<link rel="icon" href="data:," />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <style>
+  /* Follows the system theme (dark when there is no preference); the Theme button overrides it for the tab. */
   :root {
     --bg: #0b0f14; --panel: #121821; --fg: #e6edf3; --muted: #8b98a5;
-    --accent: #4fb3ff; --danger: #ff6b6b; --ok: #4ade80; --border: #1f2a37;
+    --accent: #4fb3ff; --on-accent: #0b0f14; --danger: #ff6b6b; --ok: #4ade80; --border: #1f2a37;
+    color-scheme: dark;
   }
-  :root:not([data-theme="dark"]) {
+  :root[data-theme="light"] {
     --bg: #ffffff; --panel: #f6f8fa; --fg: #1f2328; --muted: #656d76;
-    --accent: #0969da; --danger: #cf222e; --ok: #1a7f37; --border: #d0d7de;
+    --accent: #0969da; --on-accent: #ffffff; --danger: #cf222e; --ok: #1a7f37; --border: #d0d7de;
+    color-scheme: light;
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
       --bg: #ffffff; --panel: #f6f8fa; --fg: #1f2328; --muted: #656d76;
-      --accent: #0969da; --danger: #cf222e; --ok: #1a7f37; --border: #d0d7de;
+      --accent: #0969da; --on-accent: #ffffff; --danger: #cf222e; --ok: #1a7f37; --border: #d0d7de;
+      color-scheme: light;
     }
   }
   * { box-sizing: border-box; }
@@ -25,14 +29,16 @@
     margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
     background: var(--bg); color: var(--fg); padding: 16px;
   }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  a { color: var(--accent); }
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 24px; }
   h1 { font-size: 20px; margin: 0; }
   h2 { font-size: 15px; margin: 24px 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card > h2:first-child { margin-top: 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 500; }
-  .key-cell { font-family: ui-monospace, monospace; font-size: 12px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  .key-cell { font-family: ui-monospace, monospace; font-size: 12px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
   .pill.admin { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
   .pill.active { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
@@ -42,7 +48,7 @@
     padding: 6px 12px; border-radius: 6px;
   }
   button { cursor: pointer; }
-  button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .muted { color: var(--muted); font-size: 12px; }
@@ -75,7 +81,7 @@
   <div class="row">
     <a href="/console/">Open the console</a>
     <span class="muted" id="healthStatus">checking…</span>
-    <button onclick="toggleTheme()">theme</button>
+    <button onclick="toggleTheme()">Theme</button>
   </div>
 </header>
 
@@ -151,7 +157,7 @@
       <div class="muted" id="docStatus" style="margin-top: 8px;"></div>
       <div class="table-wrap">
         <table style="margin-top: 8px;">
-          <thead><tr><th>Title</th><th>Chunks</th><th class="admin-only">Access</th><th>Added</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th>Chunks</th><th class="admin-only">Access</th><th>Added</th><th class="admin-only"></th></tr></thead>
           <tbody id="docsBody"></tbody>
         </table>
       </div>
@@ -195,7 +201,8 @@ const esc = (t) => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;","
 const BASE = location.origin;
 function toggleTheme() {
   const r = document.documentElement;
-  r.setAttribute("data-theme", r.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  const dark = r.dataset.theme ? r.dataset.theme === "dark" : !matchMedia("(prefers-color-scheme: light)").matches;
+  r.setAttribute("data-theme", dark ? "light" : "dark");
 }
 function getKey() { try { return sessionStorage.getItem("adminKey") || ""; } catch { return ""; } }
 let me = null;
@@ -283,7 +290,7 @@ async function refresh() {
       $("modelsList").innerHTML = '<div class="muted">The model server is not reachable. Start it, then refresh.</div>';
     }
   } catch (e) {
-    $("keysBody").innerHTML = `<tr><td colspan="6" class="empty">${esc(e.message)}</td></tr>`;
+    $("keysBody").innerHTML = `<tr><td colspan="6" class="empty">${esc(errText(e))}</td></tr>`;
   }
 }
 async function createKey() {
