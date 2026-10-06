@@ -26,6 +26,9 @@ async function titles(S, force = false) {
   return map;
 }
 
+// Draw an inline-SVG chart at its container's width (never wider than the design width) so its text keeps its size.
+const chartWidth = (el, max) => Math.round(Math.min(max, Math.max(280, el.clientWidth || max)));
+
 function personaOptions(S, selected) {
   return S.personas.map((p) => `<option value="${esc(p.id)}" ${p.id === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("");
 }
@@ -64,14 +67,10 @@ async function overview(view, S) {
   </div>
   <div class="grid two" style="margin-top:16px">
     <div class="card"><div class="card-head"><div><h2>Activity</h2><p>Per ${ov.activity.bucket_seconds >= 3600 ? ov.activity.bucket_seconds / 3600 + " h" : ov.activity.bucket_seconds / 60 + " min"}, from the audit log</p></div></div>
-      ${series.length ? stackedColumns(series, [
-        { key: "questions", label: "Document questions", color: "var(--series-1)" },
-        { key: "denied", label: "Denied questions", color: "var(--series-2)" },
-        { key: "completions", label: "Chat completions (logged)", color: "var(--series-3)" },
-      ], { ariaLabel: "Requests per time bucket" }) : empty("No requests yet. Ask something on the Chat screen.")}
+      <div id="activityChart"></div>
     </div>
     <div class="card"><div class="card-head"><div><h2>Audit events</h2><p>Entries by type in the hash-chained log</p></div><a href="#/audit" class="btn sm">Open log</a></div>
-      ${events.length ? hbars(events, { ariaLabel: "Audit events by type" }) : empty("No audit entries.")}
+      <div id="eventsChart"></div>
     </div>
   </div>
   <div class="card" style="margin-top:16px">
@@ -85,6 +84,13 @@ async function overview(view, S) {
     </div>
   </div>
   <p class="muted small" style="margin-top:12px">Backend: <code>${esc(ov.backend.name)}</code> · default model <code>${esc(ov.backend.default_model)}</code> · retrieval <code>${esc(ov.retrieval.mode)}</code>${ov.retrieval.reranker !== "none" ? ` + <code>${esc(ov.retrieval.reranker)}</code>` : ""} · rate limit ${fmt(ov.rate_limit_per_min)}/min per caller · model policy <code>${esc(ov.model_policy)}</code> · v${esc(ov.version)}</p>`;
+  const act = $("#activityChart", view), evc = $("#eventsChart", view);
+  act.innerHTML = series.length ? stackedColumns(series, [
+    { key: "questions", label: "Document questions", color: "var(--series-1)" },
+    { key: "denied", label: "Denied questions", color: "var(--series-2)" },
+    { key: "completions", label: "Chat completions (logged)", color: "var(--series-3)" },
+  ], { ariaLabel: "Requests per time bucket", width: chartWidth(act, 520) }) : empty("No requests yet. Ask something on the Chat screen.");
+  evc.innerHTML = events.length ? hbars(events, { ariaLabel: "Audit events by type", width: chartWidth(evc, 520) }) : empty("No audit entries.");
   const seedBtn = $("#seedBtn", view);
   if (seedBtn) seedBtn.onclick = async () => {
     seedBtn.disabled = true; seedBtn.textContent = "Loading…";
@@ -447,7 +453,7 @@ async function users(view, S) {
       <td class="num">${k.revoked ? "–" : `${fmt(windowOf.get(k.label + k.masked) ?? 0)} / ${fmt(limit)}`}</td>
       <td><div class="row" style="flex-wrap:nowrap">${k.revoked ? "" : `<button class="sm" data-act="send" data-id="${esc(k.id)}">Send</button><button class="sm" data-act="burst" data-id="${esc(k.id)}" title="Send limit + 2 requests at once">Burst</button><button class="sm danger" data-act="revoke" data-id="${esc(k.id)}">Revoke</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>
-    <div id="sendLog" class="small" style="margin-top:10px"></div>
+    <div id="sendLog" class="small" style="margin-top:10px;max-height:240px;overflow-y:auto"></div>
   </div>
   <div class="grid two" style="margin-top:16px">
     <div class="card"><div class="card-head"><div><h2>Create a key</h2><p>Groups are matched by document and collection access lists (<code>group:&lt;name&gt;</code>).</p></div></div>
@@ -574,7 +580,7 @@ async function auditScreen(view, S) {
     });
     $("#auditBody", view).innerHTML = rows.map((e) => {
       const s = e.summary;
-      return `<tr class="clickable" data-line="${e.line}" tabindex="0"><td class="num">${e.line}</td><td class="small">${time(e.ts)}</td><td><code>${esc(e.event)}</code></td><td class="small">${esc(s.actor)}</td>
+      return `<tr class="clickable" data-line="${e.line}" tabindex="0"><td class="num">${e.line}</td><td class="small nowrap">${time(e.ts)}</td><td><code>${esc(e.event)}</code></td><td class="small">${esc(s.actor)}</td>
         <td>${s.decision ? `<span class="pill ${s.decision === "allow" ? "ok" : "bad"}">${esc(s.decision)}</span> <span class="muted tiny">access=${esc(s.basis)}</span>` : ""}</td>
         <td class="small">${s.cited.map((id) => esc(tmap.get(id) || id)).join(", ")}${s.flags.length ? ` <span class="pill bad">injection flag</span>` : ""}</td></tr>`;
     }).join("") || `<tr><td colspan="6">${empty("No entries match.")}</td></tr>`;
@@ -622,7 +628,7 @@ async function modelsScreen(view, S) {
   const v = m.verification || {};
   const models = Object.values(v.models || {});
   box.innerHTML = `
-  <div class="grid kpis">
+  <div class="grid kpis four">
     <div class="card kpi"><div class="label">Backend</div><div class="value" style="font-size:22px">${esc(m.backend.name)}</div><div class="sub">${m.backend.healthy ? '<span class="pill ok">healthy</span>' : '<span class="pill bad">unreachable</span>'} ${A.mode === "demo" ? sim() : ""}</div></div>
     <div class="card kpi"><div class="label">${A.mode === "demo" ? "Chat / embedding model" : "Served models"}</div><div class="value" style="font-size:16px;margin-top:10px">${A.mode === "demo" ? `<code>${esc(m.backend.chat_model)}</code><br><code>${esc(m.backend.embed_model)}</code>` : (m.served || []).map((x) => `<code>${esc(x)}</code>`).join("<br>") || esc(m.served_error || "none")}</div></div>
     <div class="card kpi"><div class="label">Supply-chain status</div><div class="value ${v.ok && models.some((x) => x.pinned) ? "ok" : v.ok ? "" : "bad"}" id="scStatus">${v.error ? "Unavailable" : v.ok ? (models.some((x) => x.pinned) ? "Verified" : "No pins") : "Problems"}</div><div class="sub">${esc(v.error || `${models.filter((x) => x.status === "verified").length} verified · ${models.filter((x) => x.status === "unpinned").length} unpinned · ${models.filter((x) => ["mismatch", "missing"].includes(x.status)).length} mismatched/missing`)}</div></div>
@@ -796,18 +802,14 @@ async function evals(view, S) {
   const leaks = configs.reduce((s, k) => s + rep.results[k].acl_leaks, 0);
   $("#ev", view).innerHTML = `
   <div class="banner info"><strong>Measured, not simulated:</strong> ${rep.questions} questions over ${rep.documents} fictional documents (${rep.restricted_documents} restricted), k=${rep.k}. Embedder: ${esc(rep.embedder)}. Answers: ${esc(rep.answerer)}. So these numbers measure the retrieval and citation pipeline with that embedder, not answer quality with a real LLM. Produced by <code>${esc(data.generated_by)}</code>.</div>
-  <div class="grid kpis" style="margin-top:16px">
+  <div class="grid kpis four" style="margin-top:16px">
     <div class="card kpi"><div class="label">CI gate</div><div class="value ${gatePass ? "ok" : "bad"}" id="gate">${gatePass ? "Pass" : "Fail"}</div><div class="sub">${gatePass ? "every gated metric meets its threshold" : esc(data.problems.join("; "))}</div></div>
     <div class="card kpi"><div class="label">ACL leaks</div><div class="value ${leaks ? "bad" : "ok"}">${leaks}</div><div class="sub">restricted passages retrieved for an outsider, all configs (must be 0)</div></div>
     <div class="card kpi"><div class="label">recall@1 · ${esc(S.evalConfig)}</div><div class="value">${pct(r["recall@1"])}</div><div class="sub">MRR ${r.mrr.toFixed(3)} · recall@${rep.k} ${pct(r[`recall@${rep.k}`])}</div></div>
     <div class="card kpi"><div class="label">Citation accuracy</div><div class="value">${pct(r.citation_accuracy)}</div><div class="sub">answers citing only the expected document</div></div>
   </div>
   <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>By configuration</h2><p>Retrieval mode + reranker</p></div></div>
-    ${groupedColumns(configs.map((k) => ({ label: k, values: rep.results[k] })), [
-      { key: "recall@1", label: "recall@1", color: "var(--series-1)" },
-      { key: "mrr", label: "MRR", color: "var(--series-2)" },
-      { key: "citation_accuracy", label: "citation accuracy", color: "var(--series-3)" },
-    ], { ariaLabel: "Eval metrics by configuration" })}
+    <div id="evalChart"></div>
     <div class="table-wrap" style="margin-top:12px"><table id="scorecard"><thead><tr><th>Configuration</th>${METRICS.map(([, l]) => `<th class="num">${esc(l)}</th>`).join("")}<th class="num">ACL leaks</th></tr></thead><tbody>
       ${configs.map((k) => `<tr class="clickable ${k === S.evalConfig ? "selected" : ""}" data-config="${esc(k)}" tabindex="0"><td><code>${esc(k)}</code></td>${METRICS.map(([m]) => {
         const v = rep.results[k][m], min = th[k] && th[k][m];
@@ -821,6 +823,12 @@ async function evals(view, S) {
     </tbody></table></div>` : empty("No misses.")}
   </div>
   <div id="browserRun"></div>`;
+  const evc = $("#evalChart", view);
+  evc.innerHTML = groupedColumns(configs.map((k) => ({ label: k, values: rep.results[k] })), [
+    { key: "recall@1", label: "recall@1", color: "var(--series-1)" },
+    { key: "mrr", label: "MRR", color: "var(--series-2)" },
+    { key: "citation_accuracy", label: "citation accuracy", color: "var(--series-3)" },
+  ], { ariaLabel: "Eval metrics by configuration", width: chartWidth(evc, 1000) });
   $("#scorecard", view).onclick = (e) => { const tr = e.target.closest("[data-config]"); if (tr) { S.evalConfig = tr.dataset.config; evals(view, S); } };
   const btn = $("#runEval", view);
   if (btn) btn.onclick = async () => {

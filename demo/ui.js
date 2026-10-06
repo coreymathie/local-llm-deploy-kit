@@ -90,8 +90,9 @@ export function bindTooltips() {
     tip.textContent = el.getAttribute("data-tip");
     tip.style.display = "block";
     const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
     tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, x + 12)) + "px";
-    tip.style.top = y + 14 + "px";
+    tip.style.top = (y + 14 + h > window.innerHeight - 8 ? Math.max(8, y - h - 10) : y + 14) + "px";
   };
   document.addEventListener("mousemove", (e) => {
     const el = e.target.closest && e.target.closest("[data-tip]");
@@ -123,8 +124,8 @@ function topRounded(x, y, w, h, r) {
 }
 
 /** Stacked columns. series: [{key, label, color}], rows: [{label, [key]: n}] */
-export function stackedColumns(rows, series, { height = 210, ariaLabel = "chart" } = {}) {
-  const W = 520, H = height, L = 30, B = 26, T = 10, R = 8;
+export function stackedColumns(rows, series, { height = 210, ariaLabel = "chart", width = 520 } = {}) {
+  const W = width, H = height, L = 30, B = 26, T = 10, R = 8;
   const totals = rows.map((r) => series.reduce((s, k) => s + (r[k.key] || 0), 0));
   const max = niceMax(Math.max(1, ...totals), true);
   const plotH = H - T - B, plotW = W - L - R;
@@ -158,8 +159,8 @@ export function stackedColumns(rows, series, { height = 210, ariaLabel = "chart"
 }
 
 /** Horizontal bars, one series. rows: [{label, value}] */
-export function hbars(rows, { color = "var(--series-1)", ariaLabel = "chart", fmtValue = (v) => v } = {}) {
-  const W = 520, rowH = 26, L = 150, R = 40;
+export function hbars(rows, { color = "var(--series-1)", ariaLabel = "chart", fmtValue = (v) => v, width = 520 } = {}) {
+  const W = width, rowH = 26, L = 150, R = 40;
   const H = Math.max(rowH, rows.length * rowH) + 6;
   const max = Math.max(1, ...rows.map((r) => r.value));
   let g = "";
@@ -175,7 +176,9 @@ export function hbars(rows, { color = "var(--series-1)", ariaLabel = "chart", fm
 
 /** Grouped columns on a 0..1 scale. groups: [{label, values: {key: v}}], series: [{key,label,color}] */
 export function groupedColumns(groups, series, { height = 260, ariaLabel = "chart", min = 0, width = 1000 } = {}) {
-  const W = width, H = height, L = 40, B = 28, T = 10, R = 8;
+  const gw0 = (width - 48) / groups.length;
+  const wrap = groups.some((g) => g.label.length * 6.2 > gw0 - 6 && g.label.includes("+"));  // ~6.2 user units per 11px char
+  const W = width, H = height, L = 40, B = wrap ? 40 : 28, T = 10, R = 8;
   const plotH = H - T - B, plotW = W - L - R, span = 1 - min;
   const gw = plotW / groups.length, bw = Math.min(26, (gw * 0.75) / series.length);
   let g = "";
@@ -192,7 +195,8 @@ export function groupedColumns(groups, series, { height = 260, ariaLabel = "char
       const tip = `${grp.label} · ${s.label}: ${(v * 100).toFixed(1)}%`;
       g += `<path class="bar" d="${topRounded(x, y, bw, h, 4)}" fill="${s.color}" data-tip="${esc(tip)}" tabindex="0" aria-label="${esc(tip)}"/>`;
     });
-    g += `<text x="${L + i * gw + gw / 2}" y="${H - 8}" text-anchor="middle">${esc(grp.label)}</text>`;
+    const cx = L + i * gw + gw / 2, lines = wrap ? grp.label.split(/(?=\+)/) : [grp.label];
+    g += `<text x="${cx}" y="${H - 8 - (lines.length - 1) * 13}" text-anchor="middle">${lines.map((t, k) => `<tspan x="${cx}" dy="${k ? 13 : 0}">${esc(t)}</tspan>`).join("")}</text>`;
   });
   g += `<line x1="${L}" x2="${W - R}" y1="${T + plotH}" y2="${T + plotH}" stroke="var(--border-strong)"/>`;
   const legend = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`).join("");
