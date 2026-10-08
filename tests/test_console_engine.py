@@ -48,7 +48,7 @@ def test_engine_version_matches_the_gateway():
 def test_overview_and_audit_entries_in_the_browser_engine(engine):
     run(engine.ask_as("priya", "policies", "What is the level 3 salary band?"))
     ov = engine.overview()
-    assert ov["documents"] == {"collections": 1, "documents": 4, "passages": 6}
+    assert ov["documents"] == {"collections": 1, "documents": 11, "passages": 13}
     assert ov["requests"]["questions"] == 1 and ov["identities"]["token_users"] == 1
     assert ov["backend"]["name"] == "demo" and ov["audit"]["ok"]
     out = engine.audit_entries(5)
@@ -59,9 +59,9 @@ def test_access_matrix_names_the_personas(engine):
     m = engine.access_matrix("policies")
     rows = {r["persona"] or r["label"]: r for r in m["rows"]}
     hr = next(d["id"] for d in m["documents"] if d["title"] == "hr.md")
-    assert rows["Priya (HR)"]["documents"][hr] == "document_acl:group:hr"
-    assert rows["Dana (Engineering)"]["documents"][hr] is None
-    assert rows["Audrey (auditor)"]["collection"]["basis"] == "role:reader:policies"
+    assert rows["Priya Shah (HR)"]["documents"][hr] == "document_acl:group:hr"
+    assert rows["Dana Ortiz (Engineering)"]["documents"][hr] is None
+    assert rows["Audrey Kim (Internal audit)"]["collection"]["basis"] == "role:reader:policies"
     before = auth._calls.copy()
     engine.access_matrix("policies")
     assert auth._calls == before  # building the matrix doesn't spend anyone's rate limit

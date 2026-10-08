@@ -1,4 +1,4 @@
-# Compensation Bands (HR only, fictional sample)
+# Compensation Bands (HR only, Cypress Harbor Credit Union, fictional sample)
 
 This is a fictional sample document for the demo. It is visible only to callers in the hr group.
 

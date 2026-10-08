@@ -42,7 +42,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CDN = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"
-SCREENS = ["overview", "chat", "documents", "users", "audit", "models", "policies", "evals", "settings"]
+SCREENS = [
+    "overview",
+    "overview/session",
+    "chat",
+    "documents",
+    "users",
+    "audit",
+    "models",
+    "policies",
+    "evals",
+    "settings",
+]
 
 
 class _Quiet(http.server.SimpleHTTPRequestHandler):
@@ -86,7 +97,8 @@ class Run:
 
 def goto(page, screen: str) -> None:
     page.evaluate(f"location.hash = '#/{screen}'")
-    page.wait_for_selector(f'#view > [data-screen="{screen}"][data-loaded="true"]', timeout=60_000)
+    base = screen.split("/")[0]
+    page.wait_for_selector(f'#view > [data-screen="{base}"][data-loaded="true"]', timeout=60_000)
 
 
 def no_overflow(page) -> int:
@@ -157,8 +169,40 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     assert page.evaluate("localStorage.getItem('plp.tourDone')") == "1"
     run.ok("demo: 5-step guided tour shown on first visit; dismissal stored")
 
-    # 1. Overview
+    # 1. Overview: business impact for the sample company, then this session
     goto(page, "overview")
+    page.wait_for_selector("#bizVolume svg.chart")
+    expect(page.locator(".banner.sample")).to_contain_text("fictional")
+    assert page.locator(".kpi.sample").count() == 8, page.locator(".kpi.sample").count()
+    assert page.locator("table.depts tbody tr").count() == 10
+    expect(page.locator("#pageTitle .crumbs")).to_contain_text("Monitor")
+    before = page.inner_text(".kpi.sample .value")
+    page.click("[data-range='7']")
+    page.wait_for_selector("[data-range='7'][aria-pressed='true']")
+    assert page.inner_text(".kpi.sample .value") != before
+    page.click("[data-range='30']")
+    page.wait_for_selector("[data-range='30'][aria-pressed='true']")
+    run.ok("demo overview: business impact for the sample company (8 KPIs, daily chart, departments, range switch)")
+    run.shot(page, "demo-overview-business")
+    page.keyboard.press("Control+k")
+    page.wait_for_selector("#palette:not([hidden])")
+    page.fill("#palette-input", "audit")
+    page.keyboard.press("Enter")
+    page.wait_for_selector('#view > [data-screen="audit"][data-loaded="true"]')
+    assert page.locator("#palette").is_hidden()
+    page.keyboard.press("g")
+    page.keyboard.press("e")
+    page.wait_for_selector('#view > [data-screen="evals"][data-loaded="true"]')
+    page.keyboard.press("?")
+    expect(page.locator("#keys")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(page.locator("#keys")).to_be_hidden()
+    page.click("#nav-collapse")
+    assert page.evaluate("document.body.classList.contains('nav-collapsed')")
+    page.click("#nav-collapse")
+    run.ok("demo navigation: command palette, g + letter shortcuts, shortcuts sheet, collapsible sidebar")
+    goto(page, "overview/session")
+    expect(page.locator("#nav a[data-sub='session']")).to_have_attribute("aria-current", "page")
     assert int(page.inner_text('[data-kpi="requests"]').replace(",", "")) >= 5
     expect(page.locator('[data-kpi="chain"]')).to_have_text("Intact")
     assert page.locator("#view svg.chart").count() == 2 and page.locator(".try").count() == 5
@@ -242,7 +286,7 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     page.fill("#aclInput", "group:finance")
     page.click("#aclForm button[type=submit]")
     expect(page.locator("#docTable tr", has_text="sample-travel-expense-policy.md")).to_contain_text("group:finance")
-    kiosk = page.locator("#matrix tr", has_text="Lobby kiosk")
+    kiosk = page.locator("#matrix tr", has_text="Branch lobby kiosk")
     titles = page.locator("#matrix th.doc").all_inner_texts()
     col = titles.index("sample-travel-expense-policy.md")
     expect(kiosk.locator("td.cell").nth(col + 1)).to_have_attribute("aria-label", "cannot read")
@@ -419,6 +463,9 @@ def live(run: Run, p) -> None:
         "GATEWAY_DB_PATH": f"{tmp}/gateway.db",
         "GATEWAY_LOG_DIR": f"{tmp}/logs",
         "GATEWAY_ADMIN_BOOTSTRAP_KEY": admin_key,
+        # The smoke test drives every screen (twice, at two widths) inside a minute with one admin key,
+        # far faster than a person; the default 60/min would turn the last screens into 429s.
+        "GATEWAY_RATE_LIMIT_PER_MIN": "240",
     }
     uv = [sys.executable, "-m", "uvicorn", "--host", "127.0.0.1", "--log-level", "warning"]
     procs = [
@@ -445,8 +492,11 @@ def live(run: Run, p) -> None:
         run.ok("live settings: signed in with the admin key (GET /v1/me)")
 
         goto(page, "overview")
+        page.wait_for_selector("#bizVolume svg.chart")
+        run.ok("live overview: business impact loads the sample company file")
+        goto(page, "overview/session")
         page.click("#seedBtn")
-        expect(page.locator('[data-kpi="documents"]')).to_have_text("5")
+        expect(page.locator('[data-kpi="documents"]')).to_have_text("13")
         expect(page.locator('[data-kpi="chain"]')).to_have_text("Intact")
         run.ok("live overview: sample documents and keys loaded through the API; counters from /admin/overview")
         run.shot(page, "live-overview")

@@ -2,6 +2,21 @@
 import { DemoAdapter, LiveAdapter, detectMode } from "./adapters.js";
 import { $, esc, closeOverlays, bindTooltips, toast } from "./ui.js";
 import { SCREENS } from "./screens.js";
+import { crumbs, initShell, openKeys, setActive } from "./shell.js";
+
+// Sidebar groups and sub-pages (the console shell is shared in design with the portfolio's other consoles).
+const ROUTES = {
+  overview: { group: "Monitor", label: "Overview", key: "o", subs: { session: "This session" } },
+  audit: { group: "Monitor", label: "Audit", key: "a" },
+  chat: { group: "Use", label: "Chat", key: "c" },
+  documents: { group: "Use", label: "Documents", key: "d" },
+  users: { group: "Govern", label: "Users & Keys", key: "u" },
+  policies: { group: "Govern", label: "Policies", key: "y" },
+  models: { group: "Govern", label: "Models", key: "m" },
+  evals: { group: "Govern", label: "Evals", key: "e" },
+  settings: { group: "Configure", label: "Settings", key: "s" },
+};
+const GROUPS = ["Monitor", "Use", "Govern", "Configure"];
 
 const S = {
   A: null, info: null, personas: [], titles: null,
@@ -76,7 +91,14 @@ async function boot() {
 // ---------- navigation ----------
 
 function buildNav() {
-  $("#nav").innerHTML = SCREENS.map((s) => `<a href="#/${s.id}" data-nav="${s.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.icon}</svg>${esc(s.title)}</a>`).join("");
+  const icon = (s) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.icon}</svg>`;
+  $("#nav").innerHTML = GROUPS.map((g) => {
+    const items = SCREENS.filter((s) => ROUTES[s.id]?.group === g);
+    return `<div class="nav-group"><div class="nav-label" id="nl-${g.toLowerCase()}">${esc(g)}</div><div class="nav-items" role="list" aria-labelledby="nl-${g.toLowerCase()}">${items.map((s) => {
+      const subs = Object.entries(ROUTES[s.id].subs || {});
+      return `<div role="listitem"><a href="#/${s.id}" data-nav="${s.id}" data-route="${s.id}">${icon(s)}<span>${esc(s.title)}</span>${s.id === "audit" ? '<b class="count" id="nav-audit-count" hidden></b>' : ""}</a>${subs.length ? `<div class="sub">${subs.map(([k, label]) => `<a href="#/${s.id}/${k}" data-route="${s.id}" data-sub="${k}" class="sub-link"><span>${esc(label)}</span></a>`).join("")}</div>` : ""}</div>`;
+    }).join("")}</div></div>`;
+  }).join("");
   $("#nav").addEventListener("click", () => { $("#sidebar").classList.remove("open"); $("#scrim").classList.remove("open"); });
 }
 
@@ -87,11 +109,13 @@ function route() {
 }
 
 async function renderRoute() {
-  const id = (location.hash.match(/^#\/([\w-]+)/) || [])[1] || "overview";
+  const [, id = "overview", subRaw = ""] = location.hash.match(/^#\/([\w-]+)(?:\/([\w-]+))?/) || [];
   const screen = SCREENS.find((s) => s.id === id) || SCREENS[0];
-  document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === screen.id ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-  $("#pageTitle").textContent = screen.title;
-  document.title = `${screen.title} · Private LLM Platform`;
+  const sub = ROUTES[screen.id]?.subs?.[subRaw] ? subRaw : "";
+  S.sub = sub;
+  setActive(screen.id, sub);
+  $("#pageTitle").innerHTML = crumbs(screen.id, sub);
+  document.title = `${sub ? ROUTES[screen.id].subs[sub] : screen.title} · Private LLM Platform`;
   const view = document.createElement("div");
   view.dataset.screen = screen.id;
   $("#view").replaceChildren(view);
@@ -116,11 +140,30 @@ $("#drawerClose").onclick = closeOverlays;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeOverlays(); endTour(false); } });
 $("#tourBtn").onclick = () => startTour();
 
+initShell({
+  home: "Cypress Harbor CU",
+  storageKey: "plp",
+  navLinks: "#nav a[data-route]",
+  routes: ROUTES,
+  go: (hash) => { if (location.hash === hash) route(); else location.hash = hash; },
+  commands: () => [
+    { section: "Actions", label: "Ask the same question as two employees", hint: "Chat › compare", run: () => { S.chat.compare = true; location.hash = "#/chat"; } },
+    { section: "Actions", label: "See who can read which document", hint: "Documents › access matrix", hash: "#/documents" },
+    { section: "Actions", label: "Verify the audit chain", hint: "Audit", hash: "#/audit" },
+    { section: "Actions", label: "Check model pins and the ML-BOM", hint: "Models", hash: "#/models" },
+    { section: "Actions", label: "Re-run the retrieval eval", hint: "Evals", hash: "#/evals" },
+    { section: "Actions", label: "Take the guided tour", hint: "Help", run: () => startTour() },
+    { section: "Actions", label: "Show keyboard shortcuts", hint: "Help", run: openKeys },
+    ...(S.personas || []).filter((p) => p.kind === "oidc").map((p) => ({ section: "Ask as", label: p.name, hint: p.note, run: () => { S.chat.persona = p.id; location.hash = "#/chat"; if (location.hash === "#/chat") route(); } })),
+  ],
+});
+$("#keys-btn").onclick = openKeys;
+
 // ---------- guided tour ----------
 
 const TOUR = [
   { nav: "overview", title: "Welcome", text: "This console runs the gateway's real code. In demo mode it is all in your browser; in live mode it talks to a running gateway. Everything simulated is labelled." },
-  { nav: "chat", title: "Permission-aware chat", text: "Ask as different people. Priya (HR) gets the salary band, cited; Dana (Engineering) asking the same question never sees that document." },
+  { nav: "chat", title: "Permission-aware chat", text: "Ask as different people. Priya Shah (HR) gets the salary band, cited; Dana Ortiz (Engineering) asking the same question never sees that document." },
   { nav: "documents", title: "Documents and access lists", text: "Upload or paste documents, set access lists per collection and document, and see the access matrix of who can read what." },
   { nav: "audit", title: "Tamper-evident audit", text: "Every question records its access decision and cited documents in a SHA-256 hash chain. Click a row for the full decision timeline." },
   { nav: "policies", title: "Policies you can edit", text: "Change group-to-role mapping or default access, validate with the gateway's own validator, apply, and re-run a scenario." },

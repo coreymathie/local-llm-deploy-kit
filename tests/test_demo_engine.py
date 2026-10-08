@@ -175,7 +175,7 @@ def test_personas_in_different_groups_get_different_answers_and_citations(engine
     priya = run(engine.ask_as("priya", "policies", salary))
     assert priya["status"] == 200 and "$77,000" in priya["answer"]
     assert priya["sources"][0]["title"] == "restricted-hr-compensation-bands.md" and priya["sources"][0]["cited"]
-    assert priya["access"]["documents_hidden"] == 1  # the engineering runbook
+    assert priya["access"]["documents_hidden"] == 2  # the engineering runbook and the BSA procedure
 
     for persona in ("dana", "kiosk", "audrey"):
         out = run(engine.ask_as(persona, "policies", salary))
@@ -194,6 +194,31 @@ def test_personas_in_different_groups_get_different_answers_and_citations(engine
     assert entry["payload"]["access"]["basis"] == "role:admin" and audit.verify()["ok"]
 
 
+def test_compliance_procedure_is_only_retrieved_for_the_compliance_group(engine):
+    load_samples(engine)
+    load_restricted(engine)
+    q = "Within how many hours must unusual activity be referred to the BSA team?"
+    marcus = run(engine.ask_as("marcus", "policies", q))
+    assert marcus["status"] == 200 and "24 hours" in marcus["answer"]
+    assert marcus["sources"][0]["title"] == "restricted-bsa-aml-escalation.md" and marcus["sources"][0]["cited"]
+    for persona in ("priya", "dana", "kiosk", "audrey"):
+        out = run(engine.ask_as(persona, "policies", q))
+        assert all(s["title"] != "restricted-bsa-aml-escalation.md" for s in out["sources"]), persona
+
+
+def test_new_sample_policies_answer_with_citations(engine):
+    load_samples(engine)
+    for question, title, expected in (
+        ("When is provisional credit posted?", "sample-card-dispute-procedure.md", "10 business days"),
+        ("Which wires need a callback?", "sample-wire-transfer-verification.md", "$5,000"),
+        ("What is the maximum term for an auto loan?", "sample-consumer-lending-guidelines.md", "84 months"),
+        ("How fast must a complaint be acknowledged?", "sample-complaint-handling-policy.md", "2 business days"),
+    ):
+        out = run(engine.ask_as("dana", "policies", question))
+        assert out["status"] == 200 and out["sources"][0]["title"] == title, (question, out["sources"][:2])
+        assert expected in out["answer"], (question, out["answer"])
+
+
 def test_whoami_shows_roles_from_groups_and_reader_limits(engine):
     load_samples(engine)
     load_restricted(engine)
@@ -201,9 +226,9 @@ def test_whoami_shows_roles_from_groups_and_reader_limits(engine):
     assert audrey["kind"] == "oidc" and audrey["label"] == "user:audrey"
     assert audrey["roles"] == ["reader:policies"] and audrey["can_chat"] is False
     assert run(engine.chat_as("audrey", "hi"))["status"] == 403
-    assert len(audrey["visible"]) == 3 and audrey["hidden_count"] == 2
+    assert len(audrey["visible"]) == 10 and audrey["hidden_count"] == 3
     kiosk = run(engine.whoami("kiosk"))
-    assert kiosk["kind"] == "api_key" and kiosk["roles"] == ["user"] and kiosk["hidden_count"] == 2
+    assert kiosk["kind"] == "api_key" and kiosk["roles"] == ["user"] and kiosk["hidden_count"] == 3
     assert run(engine.chat_as("kiosk", "hi"))["status"] == 200
     priya = run(engine.whoami("priya"))
     assert priya["groups"] == ["hr", "staff"] and "restricted-hr-compensation-bands.md" in priya["visible"]

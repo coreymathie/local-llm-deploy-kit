@@ -125,9 +125,9 @@ function topRounded(x, y, w, h, r) {
 
 /** Stacked columns. series: [{key, label, color}], rows: [{label, [key]: n}] */
 export function stackedColumns(rows, series, { height = 210, ariaLabel = "chart", width = 520 } = {}) {
-  const W = width, H = height, L = 30, B = 26, T = 10, R = 8;
   const totals = rows.map((r) => series.reduce((s, k) => s + (r[k.key] || 0), 0));
   const max = niceMax(Math.max(1, ...totals), true);
+  const W = width, H = height, L = Math.max(30, 12 + 7 * String(max).length), B = 26, T = 10, R = 8;
   const plotH = H - T - B, plotW = W - L - R;
   const step = plotW / Math.max(1, rows.length), bw = Math.max(6, Math.min(36, step * 0.6));
   let g = "";
@@ -159,15 +159,15 @@ export function stackedColumns(rows, series, { height = 210, ariaLabel = "chart"
 }
 
 /** Horizontal bars, one series. rows: [{label, value}] */
-export function hbars(rows, { color = "var(--series-1)", ariaLabel = "chart", fmtValue = (v) => v, width = 520 } = {}) {
-  const W = width, rowH = 26, L = 150, R = 40;
+export function hbars(rows, { color = "var(--series-1)", ariaLabel = "chart", fmtValue = (v) => v, width = 520, labelWidth = 150 } = {}) {
+  const W = width, rowH = 26, L = labelWidth, R = 40, maxChars = Math.floor((labelWidth - 12) / 6.4);
   const H = Math.max(rowH, rows.length * rowH) + 6;
   const max = Math.max(1, ...rows.map((r) => r.value));
   let g = "";
   rows.forEach((r, i) => {
     const y = 4 + i * rowH, w = Math.max(2, ((W - L - R) * r.value) / max);
     const tip = `${r.label}: ${fmtValue(r.value)}`;
-    g += `<text x="${L - 8}" y="${y + 15}" text-anchor="end">${esc(r.label.length > 24 ? r.label.slice(0, 23) + "…" : r.label)}</text>`;
+    g += `<text x="${L - 8}" y="${y + 15}" text-anchor="end">${esc(r.label.length > maxChars ? r.label.slice(0, maxChars - 1) + "…" : r.label)}</text>`;
     g += `<path class="bar" d="M${L},${y + 4}H${L + w - 4}Q${L + w},${y + 4} ${L + w},${y + 8}V${y + 16}Q${L + w},${y + 20} ${L + w - 4},${y + 20}H${L}Z" fill="${color}" data-tip="${esc(tip)}" tabindex="0" aria-label="${esc(tip)}"/>`;
     g += `<text x="${L + w + 6}" y="${y + 16}">${esc(fmtValue(r.value))}</text>`;
   });

@@ -221,23 +221,34 @@ GROUP_ROLES = {"staff": ["user"], "auditors": ["reader:policies"]}
 PERSONAS = {
     "admin": {"name": "Admin", "kind": "api_key", "note": "bootstrap admin key: role admin"},
     "priya": {
-        "name": "Priya (HR)",
+        "name": "Priya Shah (HR)",
         "kind": "oidc",
         "claims": {"sub": "priya", "groups": ["staff", "hr"]},
-        "note": "SSO token, groups staff + hr",
+        "note": "HR business partner · SSO token, groups staff + hr",
     },
     "dana": {
-        "name": "Dana (Engineering)",
+        "name": "Dana Ortiz (Engineering)",
         "kind": "oidc",
         "claims": {"sub": "dana", "groups": ["staff", "engineering"]},
-        "note": "SSO token, groups staff + engineering",
+        "note": "Digital banking engineer · SSO token, groups staff + engineering",
     },
-    "kiosk": {"name": "Lobby kiosk", "kind": "api_key", "label": "lobby-kiosk", "note": "API key, no groups"},
+    "marcus": {
+        "name": "Marcus Bell (Compliance)",
+        "kind": "oidc",
+        "claims": {"sub": "marcus", "groups": ["staff", "compliance"]},
+        "note": "BSA officer · SSO token, groups staff + compliance",
+    },
+    "kiosk": {
+        "name": "Branch lobby kiosk",
+        "kind": "api_key",
+        "label": "lobby-kiosk",
+        "note": "Member-facing kiosk · API key, no groups",
+    },
     "audrey": {
-        "name": "Audrey (auditor)",
+        "name": "Audrey Kim (Internal audit)",
         "kind": "oidc",
         "claims": {"sub": "audrey", "groups": ["auditors"]},
-        "note": "SSO token, group auditors: reader:policies only",
+        "note": "Internal auditor · SSO token, group auditors: reader:policies only",
     },
 }
 
