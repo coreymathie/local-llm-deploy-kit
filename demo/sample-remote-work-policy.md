@@ -1,4 +1,4 @@
-# Remote Work Policy (sample)
+# Remote Work Policy (Cypress Harbor Credit Union, fictional sample)
 
 This is a fictional sample policy for demonstration purposes only.
 

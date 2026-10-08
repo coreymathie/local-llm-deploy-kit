@@ -1,4 +1,4 @@
-# Data Retention and Records Policy (sample)
+# Data Retention and Records Policy (Cypress Harbor Credit Union, fictional sample)
 
 This is a fictional sample policy for demonstration purposes only.
 

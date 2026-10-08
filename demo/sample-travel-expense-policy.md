@@ -1,4 +1,4 @@
-# Travel and Expense Policy (sample)
+# Travel and Expense Policy (Cypress Harbor Credit Union, fictional sample)
 
 This is a fictional sample policy for demonstration purposes only.
 

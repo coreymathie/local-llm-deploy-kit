@@ -41,9 +41,27 @@ One set of static files in [`demo/`](demo/) (`index.html`, `app.js`, `screens.js
   says *Live · connected to &lt;host&gt;*. Mode comes from `GET ./api-mode` (a static file says `demo`; the
   gateway answers `live`) or `?mode=demo|live`.
 
+The console is set in a sample business so the platform can be judged at the scale it would run at:
+**Cypress Harbor Credit Union**, a *fictional* credit union (340 employees in 10 departments, 11 branches, one
+on-prem GPU server). Its 90 days of usage come from
+[`scripts/generate_sample_company.py`](scripts/generate_sample_company.py) (seeded, checked in CI) and are
+labelled **Sample** everywhere, apart from **measured** results (Evals, Benchmarks) and the **simulated**
+requests made in the tab. The demo's people (Priya Shah, HR; Dana Ortiz, engineering; Marcus Bell, BSA
+compliance; Audrey Kim, internal audit; a branch lobby kiosk) and its 13-document library (card disputes, wire
+verification, lending guidelines, identity verification, complaints, branch security, AI acceptable use,
+plus HR, engineering and BSA documents restricted by access list) use the same setting.
+
+Navigation follows modern operations consoles: screens grouped by job (Monitor, Use, Govern, Configure) with
+sub-pages in the sidebar, breadcrumbs in the header, a command palette (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>
+<kbd>K</kbd> or <kbd>/</kbd>) over screens, actions and people to ask as, `g` + letter shortcuts
+(<kbd>?</kbd> lists them), and a collapsible sidebar.
+
+![Overview › Business impact: questions answered, answered from documents, employees using it, hours saved, restricted content withheld, cost per answer, and adoption by department for the sample credit union](docs/img/console-business.png)
+
 | Screen | What it does |
 |---|---|
-| Overview | Requests, identities, collections and documents, retrieval quality (from the eval), audit chain status, access decisions; activity and audit-event charts; guided "what to try" cards |
+| Overview › Business impact | For the sample credit union over 7, 30 or 90 days: questions answered, share answered from documents with citations, employees using it, hours saved and cost per answer (with stated assumptions), restricted content withheld, member data sent outside (zero), answers rated helpful, each against the previous period; questions per day; adoption by department; topics; response time; knowledge-base collections and who may read them; governance checks; recent activity |
+| Overview › This session | Requests, identities, collections and documents, retrieval quality (from the eval), audit chain status, access decisions; activity and audit-event charts; guided "what to try" cards |
 | Chat | ChatGPT-style chat with numbered citations and a source panel (score components, access rule, cited or not, injection flags); ask as any persona or API key, compare two identities side by side, switch retrieval mode, lexical reranker and passage count per request, or use model-only chat (readers get 403) |
 | Documents | Collections and the document library: paste or upload, per-collection and per-document access-list editor, and an access matrix of which caller can read which document and the rule that decided it |
 | Users & Keys | API keys with groups, per-minute usage against the rate limit, burst test, revoke; SSO group-to-role mapping and token users |
@@ -62,7 +80,7 @@ docker compose logs gateway | grep "Bootstrap admin"     # the admin key to past
 
 That stack needs no model or GPU: the gateway talks to `mock-llm`, which is
 [`scripts/mock_openai_server.py`](scripts/mock_openai_server.py) in **simulated** mode (extractive answers,
-hashed embeddings; not a language model). Overview's *Load sample data* adds the sample policies and three
+hashed embeddings; not a language model). Overview › This session's *Load sample data* adds the sample policies and three
 keys through the API. For real answers, Ollama stays the default backend:
 `docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`, then pull `llama3.1:8b` and
 `nomic-embed-text` (see the top of `docker-compose.yml`). The older single-file admin page is still served

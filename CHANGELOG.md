@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased]
+
+The console is set in a business. 223 tests, RAG evals unchanged (no ACL leaks), and a 38-check browser smoke
+test across both console modes.
+
+### Console
+- **Overview › Business impact** for a sample company, Cypress Harbor Credit Union (fictional: 340 employees,
+  10 departments, 11 branches). Over 7, 30 or 90 days: questions answered, answered from documents with
+  citations, employees using it, hours saved and cost per answer (assumptions shown), restricted content
+  withheld, member data sent outside, answers rated helpful, each against the previous period with trend lines;
+  questions per day; adoption by department; topics; response time; collections and who may read them;
+  governance checks; recent activity. The previous Overview is now **Overview › This session**.
+- **Navigation**: screens grouped by job (Monitor, Use, Govern, Configure) with sub-pages, breadcrumbs in the
+  header, a command palette (Ctrl/Cmd+K or `/`) over screens, actions and people to ask as, `g` + letter
+  shortcuts with a `?` sheet, an audit-entry badge, a workspace label for the sample company, and a collapsible
+  sidebar (`demo/shell.js`, shared in design with the portfolio's other consoles).
+- Charts: the y axis of stacked columns sizes itself to its labels; horizontal bars take a label width.
+
+### Demo data
+- `scripts/generate_sample_company.py` writes `demo/data/sample_company.json` from a fixed seed and stated
+  assumptions; CI checks it's current, and `tests/test_sample_company.py` checks its arithmetic and that it's
+  labelled fictional.
+- The demo library grows from 5 to 13 fictional credit-union documents: card disputes, wire verification,
+  consumer lending, member identity verification, complaint handling, branch security, AI acceptable use, and a
+  BSA/AML escalation procedure restricted to `group:compliance`. The existing documents keep their facts.
+- People are named for the setting (Priya Shah, HR; Dana Ortiz, engineering; Audrey Kim, internal audit;
+  branch lobby kiosk), and Marcus Bell (BSA officer, groups staff + compliance) is added. New tests check that
+  only the compliance group retrieves the BSA procedure and that the new policies answer with citations.
+
 ## [0.7.0] — 2026-10
 
 The project is now **Private LLM Platform** (repository `private-llm-platform`, formerly

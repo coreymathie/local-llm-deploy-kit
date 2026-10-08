@@ -38,11 +38,169 @@ const personaName = (S, id) => (S.personas.find((p) => p.id === id) || {}).name 
 // Overview
 // =============================================================================================
 
+// ---------- Overview › Business impact (sample company) ----------
+
+const RANGES = [[7, "7 days"], [30, "30 days"], [90, "90 days"]];
+const num = (n) => Number(n || 0).toLocaleString("en-US");
+const pct1 = (x, d = 1) => `${(Number(x || 0) * 100).toFixed(d)}%`;
+const money = (n) => {
+  n = Number(n || 0);
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e4) return `$${Math.round(n / 1e3)}K`;
+  return "$" + Math.round(n).toLocaleString("en-US");
+};
+const shortDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+function ovTabs(active) {
+  const tabs = [["business", "Business impact", "#/overview"], ["session", "This session", "#/overview/session"]];
+  return `<div class="tabs page-tabs" role="tablist" aria-label="Overview">${tabs.map(([k, label, href]) => `<a role="tab" href="${href}" aria-selected="${k === active}" id="ovtab-${k}">${label}</a>`).join("")}</div>`;
+}
+
+function spark(values, color = "var(--accent)") {
+  if (!values.length) return "";
+  const W = 120, H = 28, min = Math.min(...values), span = Math.max(...values) - min || 1;
+  const pts = values.map((v, i) => [(i / Math.max(1, values.length - 1)) * (W - 4) + 2, H - 3 - ((v - min) / span) * (H - 6)]);
+  const [lx, ly] = pts[pts.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><path d="${pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("")}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.4" fill="${color}"/></svg>`;
+}
+
+function delta(cur, prev, { better = "up", kind = "pct" } = {}) {
+  if (prev == null || !isFinite(prev) || prev === 0) return '<span class="delta flat">no prior period</span>';
+  const change = kind === "pts" ? (cur - prev) * 100 : ((cur - prev) / Math.abs(prev)) * 100;
+  if (Math.abs(change) < 0.05) return '<span class="delta flat">no change</span>';
+  const up = change > 0, good = (better === "up") === up;
+  const label = kind === "pts" ? `${up ? "+" : "−"}${Math.abs(change).toFixed(1)} pts` : `${up ? "+" : "−"}${Math.abs(change).toFixed(1)}%`;
+  return `<span class="delta ${good ? "good" : "bad"}" title="vs the previous period"><span aria-hidden="true">${up ? "▲" : "▼"}</span> ${label}</span>`;
+}
+
+function agg(days) {
+  const t = { questions: 0, answered: 0, no_answer: 0, restricted_withheld: 0, pii_redacted: 0, injection_flagged: 0, thumbs_up: 0, thumbs_down: 0, p50: 0 };
+  for (const d of days) {
+    for (const k of Object.keys(t)) if (k in d) t[k] += d[k];
+    t.p50 += d.p50_ms * d.questions;
+  }
+  const work = days.filter((d) => d.active_users > 40);
+  t.active_avg = work.length ? work.reduce((a, d) => a + d.active_users, 0) / work.length : 0;
+  t.peak_active = Math.max(0, ...days.map((d) => d.active_users));
+  t.answer_rate = t.questions ? t.answered / t.questions : 0;
+  t.p50_ms = t.questions ? t.p50 / t.questions : 0;
+  t.helpful = t.thumbs_up + t.thumbs_down ? t.thumbs_up / (t.thumbs_up + t.thumbs_down) : 0;
+  return t;
+}
+
+function kpi(label, value, sub, d, sp) {
+  return `<div class="card kpi sample"><div class="label">${esc(label)}</div><div class="value">${value}</div><div class="kpi-foot">${d}${sp}</div><div class="sub">${sub}</div></div>`;
+}
+
 async function overview(view, S) {
+  if (S.sub === "session") return overviewSession(view, S);
+  view.innerHTML = head("Overview", "How the private assistant is serving the business.") + ovTabs("business") + loading("Loading the sample company…");
+  if (!S.company) {
+    const r = await fetch("./data/sample_company.json", { cache: "no-cache" });
+    if (!r.ok) { view.innerHTML = head("Overview", "") + ovTabs("business") + errorBox({ status: r.status, detail: "Couldn't load the sample company data" }); return; }
+    S.company = await r.json();
+  }
+  const data = S.company, co = data.company, a = data.assumptions;
+  const range = S.range || 30;
+  const days = data.days.slice(-range);
+  const prevDays = data.days.length >= range * 2 ? data.days.slice(-range * 2, -range) : null;
+  const t = agg(days), p = prevDays ? agg(prevDays) : null;
+  const hours = (t.answered * a.minutes_saved_per_answer) / 60;
+  const hoursPrev = p ? (p.answered * a.minutes_saved_per_answer) / 60 : null;
+  const infra = a.infrastructure_per_month_usd * (range / 30);
+  const series = (f) => days.map(f);
+  const scale = range / 30;
+  const period = `${shortDate(days[0].date)} – ${shortDate(days[days.length - 1].date)}, 2026`;
+  view.innerHTML = head(
+    "Overview",
+    `How the private assistant is serving <b>${esc(co.name)}</b>. <span class="pill sample">Sample company</span> Fictional data, generated for this demo, so the platform can be judged at business scale.`,
+    `<div class="seg" role="group" aria-label="Date range">${RANGES.map(([n, label]) => `<button type="button" data-range="${n}" aria-pressed="${n === range}">${label}</button>`).join("")}</div><a class="btn primary" href="#/chat">Ask a question</a>`,
+  ) + ovTabs("business") + `
+  <div class="banner sample" role="note"><strong>Sample company data.</strong> ${esc(co.name)} is fictional: ${num(co.employees)} employees, ${co.branches} branches, ${money(co.assets_usd)} in assets. These numbers come from <code>${esc(data.generated_by)}</code> (seed ${esc(data.seed)}), not from a real deployment. Measured results are on <a href="#/evals">Evals</a>; requests made in this tab are on <a href="#/overview/session">This session</a>.</div>
+  <p class="muted small period">${esc(period)} · ${range} days${p ? ` · compared with the ${range} days before` : ""}</p>
+  <div class="grid kpis four">
+    ${kpi("Questions answered", num(t.answered), `${num(t.questions)} asked · ${num(Math.round(t.questions / range))} a day`, delta(t.answered, p?.answered), spark(series((d) => d.answered)))}
+    ${kpi("Answered from documents", pct1(t.answer_rate), `with citations · ${num(t.no_answer)} found nothing to cite`, delta(t.answer_rate, p?.answer_rate, { kind: "pts" }), spark(series((d) => d.answered / Math.max(1, d.questions))))}
+    ${kpi("Employees using it", num(Math.round(t.active_avg)), `on an average workday · peak ${num(t.peak_active)} of ${num(co.employees)}`, delta(t.active_avg, p?.active_avg), spark(series((d) => d.active_users)))}
+    ${kpi("Hours saved", num(Math.round(hours)), `≈ ${money(hours * a.loaded_cost_per_hour_usd)} at ${a.minutes_saved_per_answer} min per answer`, delta(hours, hoursPrev), spark(series((d) => d.answered)))}
+    ${kpi("Restricted content withheld", num(t.restricted_withheld), "filtered out before retrieval; never shown or cited", delta(t.restricted_withheld, p?.restricted_withheld, { better: "down" }), spark(series((d) => d.restricted_withheld), "var(--series-2)"))}
+    ${kpi("Member data sent outside", "0", "every model runs on credit-union hardware", '<span class="delta good">by design</span>', "")}
+    ${kpi("Answers rated helpful", pct1(t.helpful), `${num(t.thumbs_up + t.thumbs_down)} ratings from employees`, delta(t.helpful, p?.helpful, { kind: "pts" }), spark(series((d) => d.thumbs_up / Math.max(1, d.thumbs_up + d.thumbs_down))))}
+    ${kpi("Cost per answer", `$${(infra / Math.max(1, t.answered)).toFixed(2)}`, `${money(infra)} for the GPU server over ${range} days`, delta(infra / Math.max(1, t.answered), p ? (a.infrastructure_per_month_usd * (range / 30)) / Math.max(1, p.answered) : null, { better: "down" }), spark(series((d) => d.answered)))}
+  </div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Questions per day <span class="pill sample">sample</span></h2><p>Answered with citations, or nothing in the documents the employee may read.</p></div></div><div id="bizVolume"></div></div>
+  <div class="grid two" style="margin-top:16px">
+    <div class="card"><div class="card-head"><div><h2>Adoption by department <span class="pill sample">sample</span></h2><p>Employees who asked at least one question in the last 30 days.</p></div></div>${deptTable(data.departments)}</div>
+    <div class="stack">
+      <div class="card"><div class="card-head"><div><h2>What employees ask about <span class="pill sample">sample</span></h2><p>Questions by topic, ${range} days.</p></div></div><div id="bizTopics"></div></div>
+      <div class="card"><div class="card-head"><div><h2>Response time <span class="pill sample">sample</span></h2><p>From question to cited answer on the on-prem server. The gateway's own overhead is <a href="#/evals">measured</a> separately.</p></div></div>
+        <div class="split-stats">
+          <div><div class="label">Median</div><div class="value">${(t.p50_ms / 1000).toFixed(1)} s</div>${delta(t.p50_ms, p?.p50_ms, { better: "down" })}</div>
+          <div><div class="label">95th percentile</div><div class="value">${(Math.max(...days.map((d) => d.p95_ms)) / 1000).toFixed(1)} s</div><span class="muted small">slowest day</span></div>
+          <div><div class="label">Questions with no answer</div><div class="value">${pct1(1 - t.answer_rate)}</div>${delta(1 - t.answer_rate, p ? 1 - p.answer_rate : null, { better: "down", kind: "pts" })}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="grid two" style="margin-top:16px">
+    <div class="card"><div class="card-head"><div><h2>Knowledge base <span class="pill sample">sample</span></h2><p>Collections, size and who may read them.</p></div><a class="btn sm" href="#/documents">Access matrix</a></div>${collectionsTable(data.collections)}</div>
+    <div class="card"><div class="card-head"><div><h2>Governance <span class="pill sample">sample</span></h2><p>The controls a compliance team and examiners ask about.</p></div></div>${governanceList(data.compliance, t)}</div>
+  </div>
+  <div class="grid two" style="margin-top:16px">
+    <div class="card"><div class="card-head"><div><h2>Recent activity <span class="pill sample">sample</span></h2></div></div><ol class="events">${data.notable.map((n) => `<li class="ev-${esc(n.kind)}"><span class="ev-dot" aria-hidden="true"></span><div><div class="ev-meta">${esc(shortDate(n.date))} · ${esc({ access: "Access control", ops: "Operations", compliance: "Compliance" }[n.kind] || n.kind)}</div><h3>${esc(n.title)}</h3><p>${esc(n.detail)}</p></div></li>`).join("")}</ol></div>
+    <div class="card"><div class="card-head"><div><h2>About this workspace <span class="pill sample">fictional</span></h2></div></div>
+      <dl class="facts">
+        <div><dt>Organization</dt><dd>${esc(co.name)}</dd></div>
+        <div><dt>Industry</dt><dd>${esc(co.industry)}</dd></div>
+        <div><dt>Employees</dt><dd>${num(co.employees)} in ${data.departments.length} departments</dd></div>
+        <div><dt>Members</dt><dd>${num(co.members)}</dd></div>
+        <div><dt>Deployment</dt><dd>${esc(co.deployment)}</dd></div>
+        <div><dt>Oversight</dt><dd>${co.regulators.map(esc).join(", ")}</dd></div>
+      </dl>
+      <p class="muted small" style="margin-top:10px">Assumptions: ${esc(a.note)}</p>
+    </div>
+  </div>`;
+  view.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { S.range = Number(b.dataset.range); overview(view, S); }));
+  const vol = $("#bizVolume", view), top = $("#bizTopics", view);
+  vol.innerHTML = stackedColumns(days.map((d) => ({ label: shortDate(d.date), answered: d.answered, no_answer: d.no_answer })), [
+    { key: "answered", label: "Answered with citations", color: "var(--series-1)" },
+    { key: "no_answer", label: "Nothing to cite", color: "var(--series-2)" },
+  ], { ariaLabel: "Questions per day", width: chartWidth(vol, 1100), height: 230 });
+  top.innerHTML = hbars(data.topics.map((x) => ({ label: x.topic, value: Math.round(x.questions_30d * scale) })), { ariaLabel: "Questions by topic", width: chartWidth(top, 560), fmtValue: num, color: "var(--series-3)", labelWidth: Math.min(260, Math.round(chartWidth(top, 560) * 0.48)) });
+}
+
+function deptTable(rows) {
+  return `<div class="table-wrap"><table class="depts"><thead><tr><th>Department</th><th class="num">Questions</th><th>Using it</th></tr></thead><tbody>${rows.map((r) => {
+    const share = r.active_users_30d / r.headcount;
+    return `<tr><td>${esc(r.department)}<span class="share">${num(r.headcount)} staff · ${pct1(r.answer_rate, 0)} answered</span></td><td class="num">${num(r.questions_30d)}</td><td><span class="meter-bar" role="img" aria-label="${pct1(share, 0)} of staff"><i style="width:${(share * 100).toFixed(1)}%"></i></span> <span class="nw">${num(r.active_users_30d)} · ${pct1(share, 0)}</span></td></tr>`;
+  }).join("")}</tbody></table></div>`;
+}
+
+function collectionsTable(rows) {
+  const total = rows.reduce((a, r) => a + r.documents, 0), passages = rows.reduce((a, r) => a + r.passages, 0);
+  return `<div class="table-wrap"><table><thead><tr><th>Collection</th><th class="num">Documents</th><th>Who may read</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.collection)}<span class="share">${num(r.passages)} passages</span></td><td class="num">${num(r.documents)}</td><td class="small">${esc(r.access)}</td></tr>`).join("")}</tbody><tfoot><tr><th>Total</th><th class="num">${num(total)}</th><th class="small">${num(passages)} passages indexed</th></tr></tfoot></table></div>`;
+}
+
+function governanceList(c, t) {
+  const rows = [
+    ["Member data sent to outside AI services", String(c.data_sent_to_external_ai), "Models run on the credit union's own server"],
+    ["Employees signed in through SSO", pct1(c.sso_coverage, 0), "Roles come from identity-provider groups"],
+    ["Audit log verified intact", pct1(c.audit_chain_verified_rate, 0), "Every question's access decision is hash-chained"],
+    ["Served model matches the pinned digest", pct1(c.model_pin_verified_rate, 0), "Lock file plus a CycloneDX ML-BOM"],
+    ["Personal identifiers redacted in prompts", num(t.pii_redacted), "Before anything is logged"],
+    ["Answers with prompt-injection flags", num(t.injection_flagged), "Instructions inside documents are ignored"],
+  ];
+  return `<ul class="checklist">${rows.map(([label, v, why]) => `<li><span class="ck" aria-hidden="true">✓</span><div><b>${esc(label)}</b><span class="muted small">${esc(why)}</span></div><span class="cv">${esc(v)}</span></li>`).join("")}</ul>`;
+}
+
+// ---------- Overview › This session ----------
+
+async function overviewSession(view, S) {
   const A = S.A;
-  view.innerHTML = head("Overview", A.mode === "demo"
+  view.innerHTML = head("This session", A.mode === "demo"
     ? "Everything below is computed by the gateway's own code running in this tab. The session started with five sample questions asked by the personas (simulated traffic)."
-    : `Live counters from the gateway at <code>${esc(location.host)}</code>.`) + `<div id="ov">${loading()}</div>`;
+    : `Live counters from the gateway at <code>${esc(location.host)}</code>.`) + ovTabs("session") + `<div id="ov">${loading()}</div>`;
   const [ov, ev] = await Promise.all([A.overview(), A.evals().catch(() => null)]);
   const box = $("#ov", view);
   if (isError(ov)) { box.innerHTML = errorBox(ov, signInHint(S)); return; }
@@ -54,7 +212,7 @@ async function overview(view, S) {
   }));
   const events = Object.entries(ov.audit.events).map(([label, value]) => ({ label, value })).slice(0, 10);
   const seed = A.caps.seed && ov.documents.documents === 0
-    ? `<div class="card banner info" style="margin-bottom:16px"><div class="row" style="justify-content:space-between"><span><strong>No documents yet.</strong> Load the five sample policies (two restricted) and three API keys through the real API.</span><button class="primary" id="seedBtn">Load sample data</button></div></div>`
+    ? `<div class="card banner info" style="margin-bottom:16px"><div class="row" style="justify-content:space-between"><span><strong>No documents yet.</strong> Load the Cypress Harbor sample library (13 policies, three restricted) and three API keys through the real API.</span><button class="primary" id="seedBtn">Load sample data</button></div></div>`
     : "";
   box.innerHTML = `${seed}
   <div class="grid kpis six">
@@ -76,7 +234,7 @@ async function overview(view, S) {
   <div class="card" style="margin-top:16px">
     <div class="card-head"><div><h2>What to try</h2><p>Each card opens a screen where the gateway's controls do the work.</p></div></div>
     <div class="tries">
-      <a class="try" href="#/chat"><b>Same question, different answers</b><span>Ask for the level 3 salary band as Priya (HR), then as Dana (Engineering). Compare side by side.</span></a>
+      <a class="try" href="#/chat"><b>Same question, different answers</b><span>Ask for the level 3 salary band as Priya Shah (HR), then as Dana Ortiz (Engineering). Compare side by side.</span></a>
       <a class="try" href="#/documents"><b>Change who can read a document</b><span>Edit an access list and watch the access matrix and the next answer change.</span></a>
       <a class="try" href="#/audit"><b>${A.caps.tamper ? "Tamper with the audit log" : "Verify the audit chain"}</b><span>${A.caps.tamper ? "Edit a line like an attacker would, then verify: the chain names the line." : "Re-walk the SHA-256 chain and inspect every decision."}</span></a>
       <a class="try" href="#/models"><b>${A.caps.simulatedModels ? "Break a model pin" : "Check model pins"}</b><span>${A.caps.simulatedModels ? "Pin served models, simulate a re-pull, and see enforce mode refuse it." : "Compare served models with the lock file and view the ML-BOM."}</span></a>
@@ -97,8 +255,10 @@ async function overview(view, S) {
     const out = await A.seedSamples();
     if (isError(out)) toast(errText(out), "bad"); else toast("Sample documents and keys created");
     S.titles = null; S.personas = await A.personas();
-    overview(view, S);
+    overviewSession(view, S);
   };
+  const badge = document.getElementById("nav-audit-count");
+  if (badge && ov.audit && ov.audit.entries) { badge.hidden = false; badge.textContent = num(ov.audit.entries); }
 }
 
 // =============================================================================================
