@@ -1,6 +1,6 @@
-# Wire Transfer Verification (Cypress Harbor Credit Union, fictional sample)
+# Wire Transfer Verification
 
-This is a fictional sample procedure for demonstration purposes only.
+This procedure applies to payments operations and branch staff.
 
 ## Callback verification
 

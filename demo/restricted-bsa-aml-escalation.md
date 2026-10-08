@@ -1,6 +1,6 @@
-# BSA/AML Escalation Procedure (Compliance only, fictional sample)
+# BSA/AML Escalation Procedure
 
-This is a fictional sample document for the demo. It is visible only to callers in the compliance group. It is not legal or regulatory guidance.
+This procedure applies to all employees and is administered by the BSA officer.
 
 ## Unusual activity referrals
 

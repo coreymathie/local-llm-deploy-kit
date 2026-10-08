@@ -1,6 +1,6 @@
-# Travel and Expense Policy (Cypress Harbor Credit Union, fictional sample)
+# Travel and Expense Policy
 
-This is a fictional sample policy for demonstration purposes only.
+This policy applies to all employees who travel for work.
 
 ## Approval
 

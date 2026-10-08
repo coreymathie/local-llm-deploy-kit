@@ -1,6 +1,6 @@
-# Compensation Bands (HR only, Cypress Harbor Credit Union, fictional sample)
+# Compensation Bands
 
-This is a fictional sample document for the demo. It is visible only to callers in the hr group.
+This document applies to all salaried positions and is maintained by Human Resources.
 
 ## Salary bands
 

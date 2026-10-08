@@ -1,6 +1,6 @@
-# Remote Work Policy (Cypress Harbor Credit Union, fictional sample)
+# Remote Work Policy
 
-This is a fictional sample policy for demonstration purposes only.
+This policy applies to all non-branch employees.
 
 ## Eligibility
 

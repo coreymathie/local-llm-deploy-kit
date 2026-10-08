@@ -1,6 +1,6 @@
-# Consumer Lending Guidelines (Cypress Harbor Credit Union, fictional sample)
+# Consumer Lending Guidelines
 
-This is a fictional sample guideline for demonstration purposes only.
+These guidelines apply to all consumer loan officers.
 
 ## Auto loans
 

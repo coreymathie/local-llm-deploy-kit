@@ -1,6 +1,6 @@
-# Data Retention and Records Policy (Cypress Harbor Credit Union, fictional sample)
+# Data Retention and Records Policy
 
-This is a fictional sample policy for demonstration purposes only.
+This policy applies to all employees and all credit union records.
 
 ## Retention periods
 

@@ -111,7 +111,7 @@ Golden set: 12 fictional documents (2 restricted), 43 questions, k=4. Embedder: 
 
 | Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | ACL leaks |
 |---|---:|---:|---:|---:|---:|---:|
-| `vector+none` | 0.907 | 0.977 | 0.942 | 0.884 | 0.954 | 0 |
-| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.837 | 0.977 | 0 |
-| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.837 | 0.977 | 0 |
-| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.837 | 0.954 | 0 |
+| `vector+none` | 0.907 | 0.977 | 0.942 | 0.907 | 0.954 | 0 |
+| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.907 | 0.977 | 0 |
+| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
+| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |

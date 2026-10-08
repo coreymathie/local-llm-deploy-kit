@@ -1,6 +1,6 @@
-# Member Identity Verification (Cypress Harbor Credit Union, fictional sample)
+# Member Identity Verification
 
-This is a fictional sample standard for demonstration purposes only.
+This standard applies to branch, contact-center and digital staff.
 
 ## Opening an account
 

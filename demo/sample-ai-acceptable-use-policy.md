@@ -1,6 +1,6 @@
-# Acceptable Use of AI Assistants (Cypress Harbor Credit Union, fictional sample)
+# Acceptable Use of AI Assistants
 
-This is a fictional sample policy for demonstration purposes only.
+This policy applies to every employee, contractor and intern.
 
 ## Approved tools
 

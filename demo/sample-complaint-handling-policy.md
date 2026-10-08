@@ -1,6 +1,6 @@
-# Member Complaint Handling (Cypress Harbor Credit Union, fictional sample)
+# Member Complaint Handling
 
-This is a fictional sample policy for demonstration purposes only.
+This policy applies to every employee who receives a complaint.
 
 ## Logging
 
