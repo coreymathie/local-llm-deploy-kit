@@ -1,6 +1,6 @@
-# Card Dispute Procedure (Cypress Harbor Credit Union, fictional sample)
+# Card Dispute Procedure
 
-This is a fictional sample procedure for demonstration purposes only. It is not legal or regulatory guidance.
+This procedure applies to member services and branch staff. It follows Regulation E.
 
 ## Taking the dispute
 

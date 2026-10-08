@@ -55,7 +55,9 @@ STUBBED = shims.install()
 if sys.platform == "emscripten":  # keep gateway warnings (e.g. model policy) out of the browser console
     logging.getLogger("gateway").addHandler(logging.NullHandler())
 
-from gateway import audit, auth, backends, console, identity, rag, store, supply_chain  # noqa: E402
+import numpy as np  # noqa: E402
+
+from gateway import audit, auth, backends, console, identity, rag, retrieval, store, supply_chain  # noqa: E402
 from gateway.config import settings  # noqa: E402
 from gateway.logging_setup import log_prompt  # noqa: E402
 from gateway.redact import redact  # noqa: E402
@@ -72,10 +74,11 @@ STOPWORDS = set(
 )
 
 
-def terms(text: str) -> list[str]:
+def terms(text: str, digits: bool = False) -> list[str]:
+    """Search terms. digits=True keeps single digits ("3" in "level 3") for picking answer sentences."""
     out = []
     for w in re.findall(r"[a-z0-9$]+", text.lower()):
-        if w in STOPWORDS or len(w) < 2:
+        if w in STOPWORDS or (len(w) < 2 and not (digits and w.isdigit())):
             continue
         if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
             w = w[:-1]
@@ -106,18 +109,25 @@ def _sentences(text: str) -> list[str]:
     return out
 
 
+NO_ANSWER = "I don't know: none of the documents you can access answer that."
+
+
 def extractive_answer(question: str, sources: list[tuple[int, str]], max_sentences: int = 3) -> str:
-    """BM25 over the retrieved passages' sentences; returns the best sentences with [n] citations."""
-    q = set(terms(question))
+    """BM25 over the retrieved passages' sentences; returns the best sentences with [n] citations.
+
+    Sentences come from the best sentence's source or the top-ranked passage, unless another source scores
+    nearly as well (85%), so an answer doesn't stitch an unrelated policy onto the right one.
+    """
+    q = set(terms(question, digits=True))
     cands, seen = [], set()
     for n, text in sources:
         for s in _sentences(text):
             # Like the system prompt tells a real model: instructions inside documents are not followed.
             if s not in seen and not rag.injection_signals(s):
                 seen.add(s)
-                cands.append((n, s, terms(s)))
+                cands.append((n, s, terms(s, digits=True)))
     if not q or not cands:
-        return "I don't know: the sources don't contain the answer."
+        return NO_ANSWER
     df = Counter(t for _, _, ts in cands for t in set(ts))
     avg = sum(len(ts) for _, _, ts in cands) / len(cands)
     scored = []
@@ -129,10 +139,13 @@ def extractive_answer(question: str, sources: list[tuple[int, str]], max_sentenc
             score += idf * tf[t] * 2.2 / (tf[t] + 1.2 * (0.25 + 0.75 * len(ts) / avg))
         scored.append((score, n, s))
     scored.sort(key=lambda x: -x[0])
-    best = scored[0][0]
+    best, top_n = scored[0][0], scored[0][1]
     if best <= 0:
-        return "I don't know: the sources don't contain the answer."
-    picked = [x for x in scored if x[0] >= 0.6 * best][:max_sentences]
+        return NO_ANSWER
+    picked = [x for x in scored if x[0] >= 0.6 * best and (x[1] in (top_n, 1) or x[0] >= 0.85 * best)][:max_sentences]
+    numbers = {t for t in q if t.isdigit()}
+    if numbers & set(terms(scored[0][2], digits=True)):  # "level 3": keep to sentences about level 3
+        picked = [x for x in picked if numbers & set(terms(x[2], digits=True))]
     return " ".join(f"{s.rstrip('.')} [{n}]." for _, n, s in picked)
 
 
@@ -251,6 +264,24 @@ PERSONAS = {
         "note": "Internal auditor · SSO token, group auditors: reader:policies only",
     },
 }
+
+
+ALL = "*"  # the console's "All sources": every collection the caller may read
+# The console declines when the best passage's embedding similarity is below this, instead of quoting a
+# passage that shares one word with the question. Measured on the sample library: real questions score
+# 0.13 and up, off-topic ones ("What is our CEO's name?") 0.07. Not applied in scripts/rag_eval.py.
+RELEVANCE_FLOOR = 0.09
+
+
+def _combined(decisions: list[dict]) -> dict:
+    visible = sum(d["documents_visible"] for d in decisions)
+    return {
+        "decision": "allow" if visible else "deny",
+        "basis": "each collection's own rule",
+        "documents_visible": visible,
+        "documents_hidden": sum(d["documents_hidden"] for d in decisions),
+        "collections_searched": sum(d["decision"] == "allow" for d in decisions),
+    }
 
 
 def _mask(key: str) -> str:  # same as gateway/main.py
@@ -411,16 +442,21 @@ class DemoEngine:
             p = await self._principal(persona)
         except HTTPException as e:
             return {"status": e.status_code, "detail": e.detail}
-        access = rag.access_for(p, collection)
-        visible = rag.list_documents(collection, access)
+        names = [c["name"] for c in rag.list_collections(None)] if collection == ALL else [collection]
+        visible, hidden, decisions = [], 0, []
+        for name in names:
+            access = rag.access_for(p, name)
+            visible += rag.list_documents(name, access)
+            hidden += access.hidden
+            decisions.append(access.audit())
         return {
             **p.public(),
             "collections": [c["name"] for c in rag.list_collections(p)],
             "can_chat": p.is_user,
             "visible": [d["title"] for d in visible],
             # Shown on the demo page to explain the decision; the API never tells a caller what it can't see.
-            "hidden_count": access.hidden,
-            "decision": access.audit(),
+            "hidden_count": hidden,
+            "decision": decisions[0] if len(decisions) == 1 else _combined(decisions),
         }
 
     def revoke_key(self, key: str) -> dict:
@@ -575,30 +611,89 @@ class DemoEngine:
         log_prompt(p.label, DEMO_MODEL, json.dumps(params.messages), result.content, total)
         return {"status": 200, "content": result.content, "total_tokens": total, "model": DEMO_MODEL}
 
+    async def _retrieve_all(self, rec, question: str, top_k: int, config: dict):
+        """One ranking over every collection the caller may read (the console's "All sources").
+
+        Each collection's access decision is made first, exactly as for a single collection; only the
+        admitted passages are pooled and ranked together, so hidden documents never reach scoring.
+        """
+        pooled, decisions, where = [], [], {}
+        for c in rag.list_collections(None):
+            access = rag.access_for(rec, c["name"])
+            decisions.append(access.audit())
+            if access.allowed and access.doc_ids:
+                for row in rag.candidates(c["name"], access):
+                    pooled.append((access, row))
+                    where[row["doc_id"]] = c["name"]
+        combined = _combined(decisions)
+        if not pooled:
+            return [], combined, where
+        vector_scores = None
+        if config["mode"] != "bm25":
+            q = (await rag.embed([question]))[0]
+            matrix = np.vstack([np.frombuffer(r["embedding"], dtype=np.float32) for _, r in pooled])
+            vector_scores = (matrix @ q).tolist()
+        ranked = retrieval.rank(
+            question,
+            [r["text"] for _, r in pooled],
+            vector_scores,
+            mode=config["mode"],
+            top_k=max(1, min(top_k, 12)),
+            rrf_k=settings.GATEWAY_RRF_K,
+            reranker=retrieval.get_reranker(config["reranker"], settings.GATEWAY_CROSS_ENCODER_MODEL),
+            rerank_candidates=settings.GATEWAY_RERANK_CANDIDATES,
+        )
+        sources = [
+            rag.Source(
+                n=i + 1,
+                doc_id=pooled[j][1]["doc_id"],
+                title=pooled[j][1]["title"],
+                chunk=pooled[j][1]["idx"],
+                score=float(detail["final"]),
+                text=pooled[j][1]["text"],
+                access=pooled[j][0].doc_basis.get(pooled[j][1]["doc_id"], ""),
+                scores={k: v for k, v in detail.items() if k != "final"},
+            )
+            for i, (j, detail) in enumerate(ranked)
+        ]
+        return sources, combined, where
+
     async def _answer(
         self, rec, collection: str, question: str, top_k: int, mode: str | None = None, reranker: str | None = None
     ) -> dict:
         started = time.perf_counter()
         try:
             config = rag.retrieval_config(mode or None, reranker or None)
-            access = rag.access_for(rec, collection)
+            if collection == ALL:
+                sources, access_audit, where = await self._retrieve_all(rec, question, top_k, config)
+            else:
+                access = rag.access_for(rec, collection)
+                access_audit, where = access.audit(), {}
         except rag.RagError as e:
             return {"status": 400, "detail": str(e)}
         t_access = time.perf_counter()
-        if not access.doc_ids:
+        if collection == ALL:
+            if not sources:
+                return {"status": 404, "detail": "there are no documents you can read yet"}
+        elif not access.doc_ids:
             if access.hidden:
                 audit.append(
-                    "document_question_denied", {"key": rec.label, "collection": collection, "access": access.audit()}
+                    "document_question_denied", {"key": rec.label, "collection": collection, "access": access_audit}
                 )
             return {"status": 404, "detail": f"collection {collection!r} has no documents yet"}
-        sources = await rag.retrieve(
-            collection, question, top_k, access, mode=config["mode"], reranker=config["reranker"]
-        )
+        else:
+            sources = await rag.retrieve(
+                collection, question, top_k, access, mode=config["mode"], reranker=config["reranker"]
+            )
         if not sources:
             return {"status": 404, "detail": f"collection {collection!r} has no documents yet"}
         t_retrieval = time.perf_counter()
         params = backends.ChatParams(model=DEMO_MODEL, messages=rag.build_messages(question, sources), temperature=0.1)
-        result = await backends.get_backend().chat(params)
+        similarity = max((s.scores or {}).get("vector", 1.0) for s in sources)
+        if similarity < RELEVANCE_FLOOR:  # nothing close enough to answer from: decline without generating
+            result = backends.ChatResult(NO_ANSWER, 0, len(NO_ANSWER.split()), "chatcmpl-demo", DEMO_MODEL)
+        else:
+            result = await backends.get_backend().chat(params)
         t_generation = time.perf_counter()
         timings = {
             "access": round((t_access - started) * 1000, 2),
@@ -614,7 +709,7 @@ class DemoEngine:
             "collection": collection,
             "model": DEMO_MODEL,
             "retrieval": config,
-            "access": access.audit(),
+            "access": access_audit,
             "sources": [
                 {
                     "doc_id": s.doc_id,
@@ -641,6 +736,8 @@ class DemoEngine:
                     "n": s.n,
                     "doc_id": s.doc_id,
                     "title": s.title,
+                    "collection": where.get(s.doc_id, collection),
+                    "access": s.access,
                     "chunk": s.chunk,
                     "score": round(s.score, 4),
                     "cited": s.n in cited,
@@ -651,7 +748,7 @@ class DemoEngine:
                 for s in sources
             ],
             "system_prompt": rag.SYSTEM_PROMPT,
-            "access": access.audit(),
+            "access": access_audit,
             "retrieval": config,
             "timings_ms": timings,
             "usage": {"total_tokens": tokens},

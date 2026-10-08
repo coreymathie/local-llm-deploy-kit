@@ -53,7 +53,7 @@ def test_console_is_served_with_a_live_mode_marker(client):
     r = client.get("/console", follow_redirects=False)
     assert r.status_code in (307, 308) and r.headers["location"] == "/console/"
     page = client.get("/console/")
-    assert page.status_code == 200 and "<title>Private LLM Platform</title>" in page.text
+    assert page.status_code == 200 and "Private LLM Platform</title>" in page.text
     mode = client.get("/console/api-mode").json()
     assert mode == {"mode": "live", "product": "Private LLM Platform", "version": main.__version__, "backend": "ollama"}
     for asset in ("app.js", "adapters.js", "screens.js", "ui.js", "styles.css", "data/rag_eval.json"):

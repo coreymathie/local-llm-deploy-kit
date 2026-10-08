@@ -16,7 +16,7 @@ Python modules (keys and rate limiting, roles and permission-aware retrieval, ci
 chain, policy validation, model pinning, the RAG eval) run in your browser through Pyodide. Nothing leaves
 the page. There is no LLM in the browser; answers are extractive and labelled as simulated.
 
-![The console's Chat screen: the same question asked as an HR user and an engineer, side by side, with cited sources](docs/img/console.png)
+![Harbor Assistant: an HR employee and an engineer ask the same question side by side; the HR answer cites the compensation document and the source opens with the quoted passage highlighted](docs/img/console.png)
 
 ---
 
@@ -30,46 +30,62 @@ the page. There is no LLM in the browser; answers are extractive and labelled as
 
 ## Console
 
-One set of static files in [`demo/`](demo/) (`index.html`, `app.js`, `screens.js`, `adapters.js`, `ui.js`,
-`styles.css`) runs in two modes:
+One set of static files in [`demo/`](demo/) (`index.html`, `app.js`, `assistant.js`, `screens.js`,
+`adapters.js`, `ui.js`, `styles.css`) runs in two modes:
 
 - **Demo** (GitHub Pages): `DemoAdapter` loads Pyodide 0.26.4 and runs the gateway's own modules through
   `demo/engine.py`, with a simulated backend (hashed bag-of-words embeddings, extractive answers, a stand-in
-  Ollama model inventory). The header says *Demo · runs in your browser*.
+  Ollama model inventory). The header says *Demo*.
 - **Live**: the gateway serves the same files at `/console/` and `LiveAdapter` calls its HTTP API with the
   admin key or token you enter on Settings (kept in memory, or in `sessionStorage` if you ask). The header
   says *Live · connected to &lt;host&gt;*. Mode comes from `GET ./api-mode` (a static file says `demo`; the
   gateway answers `live`) or `?mode=demo|live`.
 
-The console is set in a sample business so the platform can be judged at the scale it would run at:
+The console is set in a sample business so the platform can be judged the way an employer would use it:
 **Cypress Harbor Credit Union**, a *fictional* credit union (340 employees in 10 departments, 11 branches, one
-on-prem GPU server). Its 90 days of usage come from
-[`scripts/generate_sample_company.py`](scripts/generate_sample_company.py) (seeded, checked in CI) and are
-labelled **Sample** everywhere, apart from **measured** results (Evals, Benchmarks) and the **simulated**
-requests made in the tab. The demo's people (Priya Shah, HR; Dana Ortiz, engineering; Marcus Bell, BSA
-compliance; Audrey Kim, internal audit; a branch lobby kiosk) and its 13-document library (card disputes, wire
-verification, lending guidelines, identity verification, complaints, branch security, AI acceptable use,
-plus HR, engineering and BSA documents restricted by access list) use the same setting.
+on-prem GPU server). It opens on **Harbor Assistant**, the employee-facing chat, the way an internal
+Copilot-style assistant does; administration and governance sit behind it in the sidebar.
 
-Navigation follows modern operations consoles: screens grouped by job (Monitor, Use, Govern, Configure) with
-sub-pages in the sidebar, breadcrumbs in the header, a command palette (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>
-<kbd>K</kbd> or <kbd>/</kbd>) over screens, actions and people to ask as, `g` + letter shortcuts
-(<kbd>?</kbd> lists them), and a collapsible sidebar.
+- **Library**: 57 documents in five collections (staff policies, member services, lending, compliance, branch
+  operations), each with an owner, department, version and review date. 44 come from
+  [`scripts/sample_library.py`](scripts/sample_library.py) (seeded, checked in CI); HR compensation, the
+  engineering payments runbook, the BSA procedure and OFAC screening are restricted by access list.
+- **People**: Priya Shah (HR), Dana Ortiz (engineering), Marcus Bell (BSA compliance), Audrey Kim (internal
+  audit) and a branch lobby kiosk. API keys and the bootstrap admin appear in the technical view.
+- **Usage**: 90 days from [`scripts/generate_sample_company.py`](scripts/generate_sample_company.py), labelled
+  **Sample** everywhere, apart from **measured** results (Answer quality, Benchmarks) and the **simulated**
+  requests made in the tab.
 
-![Overview › Business impact: questions answered, answered from documents, employees using it, hours saved, restricted content withheld, cost per answer, and adoption by department for the sample credit union](docs/img/console-business.png)
+**Business and technical views.** The header switch (or `?view=technical`) chooses the audience. The business
+view shows what employees and administrators see: plain-language access ("Restricted to the hr group"),
+document titles, friendly audit-event names. The technical view adds retrieval scores and modes, API keys and
+token limits, raw access-list entries, model digests, the lock file and ML-BOM, and the modules running in the
+tab. Light and dark themes follow the system and can be switched in the header.
+
+**Ask across everything you can read.** *All sources I can read* (the default) searches every collection the
+person may read: the access decision runs per collection before any passage is scored, then passages are
+ranked together. An answer quotes only sentences from its best-matching document; a question nothing in the
+library answers well gets "I couldn't find that in the documents you can access" instead of an unrelated
+quote (a relevance floor on vector similarity; console only, not applied to the eval).
+
+Navigation: screens grouped as Assistant, Admin and Governance, breadcrumbs, a command palette
+(<kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>K</kbd> or <kbd>/</kbd>), `g` + letter shortcuts (<kbd>?</kbd> lists them),
+and a collapsible sidebar.
+
+![Usage and impact: questions answered, answered from documents, employees using it, hours saved, restricted content withheld, cost per answer, and adoption by department for the sample credit union](docs/img/console-business.png)
 
 | Screen | What it does |
 |---|---|
-| Overview › Business impact | For the sample credit union over 7, 30 or 90 days: questions answered, share answered from documents with citations, employees using it, hours saved and cost per answer (with stated assumptions), restricted content withheld, member data sent outside (zero), answers rated helpful, each against the previous period; questions per day; adoption by department; topics; response time; knowledge-base collections and who may read them; governance checks; recent activity |
-| Overview › This session | Requests, identities, collections and documents, retrieval quality (from the eval), audit chain status, access decisions; activity and audit-event charts; guided "what to try" cards |
-| Chat | ChatGPT-style chat with numbered citations and a source panel (score components, access rule, cited or not, injection flags); ask as any persona or API key, compare two identities side by side, switch retrieval mode, lexical reranker and passage count per request, or use model-only chat (readers get 403) |
-| Documents | Collections and the document library: paste or upload, per-collection and per-document access-list editor, and an access matrix of which caller can read which document and the rule that decided it |
-| Users & Keys | API keys with groups, per-minute usage against the rate limit, burst test, revoke; SSO group-to-role mapping and token users |
-| Audit | The hash-chained log with filters and search; each row opens a decision timeline (authenticate, access decision, retrieval, sources, generation, answer, hashes). Demo mode adds tamper/restore |
-| Models | Backend health, served models, verification against the lock file, off/warn/enforce policy, lock-file validation, ML-BOM model components. Demo mode adds pin, simulated re-pull and a policy check |
-| Policies | The runtime policy (group roles, default collection access, retrieval, rate limit, model policy) as JSON, validated with the gateway's own types and `identity.check_role`, applied and audited, with a scenario re-run before and after |
-| Evals | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json`, misses per question; demo mode re-runs the eval in the browser and compares |
-| Settings | Mode, credential (live), modules running in the tab (demo), and what is simulated |
+| Ask | Chat with streamed answers, numbered citations and source cards; a citation opens the document with the quoted passage highlighted, its owner, version, review date and who may read it. Conversation history, suggested questions per person, copy / ask again / helpful / not helpful, ask as someone else or compare two people side by side, search one collection or all. Technical view: retrieval mode, reranker, passage count, model-only chat (readers get 403) and a retrieval-details table per answer (scores, access rule, injection flags, audit line) |
+| Usage and impact | For the sample credit union over 7, 30 or 90 days: questions answered, share answered from documents with citations, employees using it, hours saved and cost per answer (with stated assumptions), restricted content withheld, member data sent outside (zero), answers rated helpful, each against the previous period; questions per day; adoption by department; topics; response time; knowledge-base collections and who may read them; governance checks; recent activity |
+| Usage and impact › This session | Requests, identities, collections and documents, audit status and access decisions for what was done in this tab; guided "what to try" cards |
+| Documents | The library with titles, owners and review dates, a filter, add or upload, per-collection and per-document access lists, and a plain-language access matrix of who can read which document |
+| People and keys | People and applications with their roles and groups; API keys with usage against the rate limit, burst test and revoke (technical view); SSO group-to-role mapping |
+| Audit log | The hash-chained log with friendly event names, filters, search and paging; each row opens a decision timeline (sign-in, access decision, retrieval, sources, answer, hashes). "Log intact" check; demo mode adds a tamper-detection test |
+| Access policy | What is in effect now in plain language, then the runtime policy as JSON, validated with the gateway's own types and `identity.check_role`, applied and audited, with a "try a change" scenario before and after |
+| Models | Backend health, served models, off/warn/enforce policy; technical view adds digests, lock-file verification and validation, and ML-BOM model components |
+| Answer quality | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json` (measured on the benchmark library), questions not answered perfectly; demo mode re-runs the eval in the browser and compares |
+| Settings | Mode, credential (live), modules running in the tab (technical view), and what is simulated |
 
 A five-step guided tour runs on the first visit. **Run it live:**
 
@@ -80,7 +96,7 @@ docker compose logs gateway | grep "Bootstrap admin"     # the admin key to past
 
 That stack needs no model or GPU: the gateway talks to `mock-llm`, which is
 [`scripts/mock_openai_server.py`](scripts/mock_openai_server.py) in **simulated** mode (extractive answers,
-hashed embeddings; not a language model). Overview › This session's *Load sample data* adds the sample policies and three
+hashed embeddings; not a language model). Usage and impact › This session's *Load sample data* adds the sample library and the
 keys through the API. For real answers, Ollama stays the default backend:
 `docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`, then pull `llama3.1:8b` and
 `nomic-embed-text` (see the top of `docker-compose.yml`). The older single-file admin page is still served
@@ -214,7 +230,7 @@ access token and shows only the cards the role allows. A valid token whose group
 
 ## Quality
 
-- **218 automated tests** (186 through v0.6 plus 32 added in v0.7; parametrized cases counted individually),
+- **230 automated tests** (186 through v0.6, 32 added in v0.7, 12 since; parametrized cases counted individually),
   all passing, run in CI with `ruff check`, `ruff format --check`, `shellcheck` and (CI only) `helm lint`.
 - Upstream HTTP is mocked for both backends: Ollama's native API and the OpenAI wire format (chat,
   SSE streaming with usage, embeddings, models, errors before the first token).
@@ -226,10 +242,10 @@ access token and shows only the cards the role allows. A valid token whose group
 
 | Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | ACL leaks |
 |---|---:|---:|---:|---:|---:|---:|
-| `vector+none` | 0.907 | 0.977 | 0.942 | 0.884 | 0.954 | 0 |
-| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.837 | 0.977 | 0 |
-| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.837 | 0.977 | 0 |
-| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.837 | 0.954 | 0 |
+| `vector+none` | 0.907 | 0.977 | 0.942 | 0.907 | 0.954 | 0 |
+| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.907 | 0.977 | 0 |
+| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
+| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |
 
 - Docs are tested too: every `tests/…::test_name` and `gateway/…::symbol` referenced in `docs/` and this
   README must exist (`tests/test_docs.py`), and every metric the Grafana dashboard queries must be
@@ -237,7 +253,7 @@ access token and shows only the cards the role allows. A valid token whose group
 - The console's browser engine runs under CPython in the suite (`tests/test_demo_engine.py`,
   `tests/test_console_engine.py`), and `scripts/demo_smoke.py` drives the real console headlessly with
   Playwright in both modes: every screen and its key interaction in demo mode, then the gateway and the
-  simulated backend under uvicorn in live mode (35 checks, no console errors, no horizontal scroll at 390 px).
+  simulated backend under uvicorn in live mode (41 checks, no console errors, no horizontal scroll at 390 px).
 
 | Test file | Covers |
 |---|---|
@@ -253,6 +269,7 @@ access token and shows only the cards the role allows. A valid token whose group
 | `test_metrics.py`, `test_telemetry.py` | `/metrics` labels (route templates, key labels, never key values), tokens, TTFT, 401/429, token protection; GenAI span attributes, no prompt text, no-op without OTel |
 | `test_injection_flags.py`, `test_redact.py` | Injection heuristics (payloads flagged, ordinary text not); redaction patterns |
 | `test_console.py`, `test_console_engine.py` | Console endpoints (overview, audit entries, access matrix, runtime policy with validation, effect and audit, rate-limit window, lock validation, ML-BOM), admin-only access, per-request retrieval switches, the simulated mock backend and the compose stack end to end, eval data drift, page assets; the browser engine's console calls (pin, re-pull, enforce, policy, in-browser eval) |
+| `test_sample_library.py`, `test_sample_company.py` | The demo library and usage file are reproducible from their seeds and consistent with each other; every document has an owner and review date; *All sources* answers from the right collection, still hides restricted documents (OFAC visible to compliance only), and declines off-topic questions instead of quoting a passage |
 | `test_loadtest.py`, `test_demo_engine.py`, `test_deploy_config.py`, `test_docs.py`, `test_ingest_folder.py` | Load-test math and an in-process run; demo engine; compose/profile sanity; doc references; folder ingest |
 
 ## Observability

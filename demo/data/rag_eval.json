@@ -15,7 +15,7 @@
         "recall@1": 0.907,
         "recall@4": 0.9767,
         "mrr": 0.9419,
-        "citation_accuracy": 0.8837,
+        "citation_accuracy": 0.907,
         "answer_contains": 0.9535,
         "acl_leaks": 0,
         "failures": [
@@ -28,15 +28,6 @@
               "onboarding-guide.md"
             ],
             "contains": false
-          },
-          {
-            "id": "q05",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md",
-              "it-security-policy.md"
-            ],
-            "contains": true
           },
           {
             "id": "q10",
@@ -77,7 +68,6 @@
             "rank": 2,
             "cited": [
               "benefits-overview.md",
-              "data-classification-policy.md",
               "onboarding-guide.md"
             ],
             "contains": true
@@ -90,7 +80,7 @@
         "recall@1": 1.0,
         "recall@4": 1.0,
         "mrr": 1.0,
-        "citation_accuracy": 0.8372,
+        "citation_accuracy": 0.907,
         "answer_contains": 0.9767,
         "acl_leaks": 0,
         "failures": [
@@ -101,24 +91,6 @@
               "expense-reimbursement-policy.md",
               "it-security-policy.md",
               "remote-work-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q05",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md",
-              "it-security-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q07",
-            "rank": 1,
-            "cited": [
-              "it-security-policy.md",
-              "travel-policy.md"
             ],
             "contains": true
           },
@@ -153,18 +125,7 @@
             "rank": 1,
             "cited": [
               "expense-reimbursement-policy.md",
-              "it-security-policy.md",
               "remote-work-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q40",
-            "rank": 1,
-            "cited": [
-              "benefits-overview.md",
-              "data-classification-policy.md",
-              "onboarding-guide.md"
             ],
             "contains": true
           }
@@ -176,7 +137,7 @@
         "recall@1": 0.9535,
         "recall@4": 1.0,
         "mrr": 0.9767,
-        "citation_accuracy": 0.8372,
+        "citation_accuracy": 0.8837,
         "answer_contains": 0.9767,
         "acl_leaks": 0,
         "failures": [
@@ -184,27 +145,8 @@
             "id": "q02",
             "rank": 2,
             "cited": [
-              "expense-reimbursement-policy.md",
               "it-security-policy.md",
               "onboarding-guide.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q05",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md",
-              "it-security-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q07",
-            "rank": 1,
-            "cited": [
-              "it-security-policy.md",
-              "travel-policy.md"
             ],
             "contains": true
           },
@@ -239,7 +181,6 @@
             "rank": 1,
             "cited": [
               "expense-reimbursement-policy.md",
-              "it-security-policy.md",
               "remote-work-policy.md"
             ],
             "contains": true
@@ -249,7 +190,6 @@
             "rank": 2,
             "cited": [
               "benefits-overview.md",
-              "data-classification-policy.md",
               "onboarding-guide.md"
             ],
             "contains": true
@@ -262,7 +202,7 @@
         "recall@1": 1.0,
         "recall@4": 1.0,
         "mrr": 1.0,
-        "citation_accuracy": 0.8372,
+        "citation_accuracy": 0.907,
         "answer_contains": 0.9535,
         "acl_leaks": 0,
         "failures": [
@@ -277,24 +217,6 @@
             "contains": false
           },
           {
-            "id": "q05",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md",
-              "it-security-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q07",
-            "rank": 1,
-            "cited": [
-              "it-security-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
             "id": "q08",
             "rank": 1,
             "cited": [
@@ -325,18 +247,7 @@
             "rank": 1,
             "cited": [
               "expense-reimbursement-policy.md",
-              "it-security-policy.md",
               "remote-work-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q40",
-            "rank": 1,
-            "cited": [
-              "benefits-overview.md",
-              "data-classification-policy.md",
-              "onboarding-guide.md"
             ],
             "contains": true
           }

@@ -1,6 +1,6 @@
-# Digital Banking Payments On-Call Runbook (Engineering only, Cypress Harbor Credit Union, fictional sample)
+# Digital Banking Payments On-Call Runbook
 
-This is a fictional sample document for the demo. It is visible only to callers in the engineering group.
+This runbook applies to engineers on the payments on-call rotation.
 
 ## Rotation
 

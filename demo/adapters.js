@@ -19,6 +19,11 @@ async function fetchText(url) {
 
 const lastN = (key, n = 8) => String(key).slice(-n);
 
+// The sample library's catalog (scripts/sample_library.py): every document with its collection and access list.
+async function libraryCatalog() {
+  return JSON.parse(await fetchText(new URL("data/library.json", location.href)));
+}
+
 const storage = {
   get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* storage blocked */ } },
@@ -98,9 +103,11 @@ export class DemoAdapter {
     progress("engine", "done");
 
     progress("samples", "active");
-    for (const name of m.SAMPLES) await this.call("add_document", "policies", name, await fetchText(new URL(name, location.href)));
-    for (const item of m.RESTRICTED_SAMPLES) {
-      await this.call("add_document", "policies", item.file, await fetchText(new URL(item.file, location.href)), item.acl);
+    const cat = await libraryCatalog();
+    const texts = await Promise.all(cat.documents.map((d) => fetchText(new URL(d.path, location.href))));
+    for (let i = 0; i < cat.documents.length; i++) {
+      const d = cat.documents[i];
+      await this.call("add_document", d.collection, d.file, texts[i], d.acl);
     }
     // A little sample traffic so the overview and audit log have something to show (labelled simulated).
     for (const [p, q] of [
@@ -147,7 +154,12 @@ export class DemoAdapter {
   tamper(line, mode) { return this.call("tamper", line, mode); }
   restoreAudit() { return this.call("restore"); }
   // documents
-  async collections() { return this.call("collections"); }
+  async collections() {
+    const cols = await this.call("collections");
+    const order = ["policies", "member-services", "lending", "compliance", "branch-operations"];
+    const rank = (name) => (order.includes(name) ? order.indexOf(name) : order.length);
+    return Array.isArray(cols) ? cols.sort((a, b) => rank(a.name) - rank(b.name)) : cols;
+  }
   documents(c) { return this.call("list_documents", c); }
   addText(c, title, text, acl) { return this.call("add_document", c, title, text, acl || []); }
   async uploadFile(c, file, acl) {
@@ -286,26 +298,62 @@ export class LiveAdapter {
     const key = this._keyFor(persona);
     const me = await this.req("GET", "/v1/me", { key });
     if (me.status && me.status >= 400) return me;
-    const docs = await this.req("GET", `/v1/collections/${encodeURIComponent(collection)}/documents`, { key });
+    const names = collection === "*" ? await this._readable(key) : [collection];
+    const visible = [];
+    for (const name of names) {
+      const docs = await this.req("GET", `/v1/collections/${encodeURIComponent(name)}/documents`, { key });
+      if (Array.isArray(docs)) visible.push(...docs.map((d) => d.title));
+    }
     const roles = me.roles || [];
-    return { ...me, can_chat: roles.includes("user") || roles.includes("admin"), visible: Array.isArray(docs) ? docs.map((d) => d.title) : [] };
+    return { ...me, can_chat: roles.includes("user") || roles.includes("admin"), visible };
+  }
+  async _readable(key) {
+    const cols = await this.req("GET", "/v1/collections", { key });
+    return Array.isArray(cols) ? cols.map((c) => c.name) : [];
   }
   // chat
   async ask(persona, collection, question, o = {}) {
-    const key = this._keyFor(persona);
+    if (collection === "*") return this._askAll(persona, question, o);
+    const lastLine = await this._lastAuditLine();
+    const out = await this._askOne(persona, collection, question, o);
+    await this._attachDecision(out, collection, lastLine, 10);
+    return out;
+  }
+  _askOne(persona, collection, question, o) {
     const body = { question, top_k: o.top_k || 4 };
     if (o.mode) body.retrieval_mode = o.mode;
     if (o.reranker) body.reranker = o.reranker;
+    return this.req("POST", `/v1/collections/${encodeURIComponent(collection)}/ask`, { key: this._keyFor(persona), body });
+  }
+  async _lastAuditLine() {
     const before = await this.req("GET", "/admin/audit/entries?limit=1");
-    const lastLine = before.entries && before.entries.length ? before.entries[0].line : 0;
-    const out = await this.req("POST", `/v1/collections/${encodeURIComponent(collection)}/ask`, { key, body });
-    // The API never tells a caller what it can't see; the console (as admin) reads the decision from the audit log.
-    const audit = await this.req("GET", "/admin/audit/entries?limit=10");
-    if (audit.entries) {
-      const hit = audit.entries.find((e) => e.line > lastLine && (e.event === "document_question" || e.event === "document_question_denied"));
-      if (hit) { out.access = hit.payload.access; out.asked_as = hit.payload.key; out.audit_line = hit.line; }
-    }
-    return out;
+    return before.entries && before.entries.length ? before.entries[0].line : 0;
+  }
+  // The API never tells a caller what it can't see; the console (as admin) reads the decision from the audit log.
+  async _attachDecision(out, collection, lastLine, limit) {
+    const audit = await this.req("GET", `/admin/audit/entries?limit=${limit}`);
+    const hit = (audit.entries || []).find((e) => e.line > lastLine && e.payload?.collection === collection
+      && (e.event === "document_question" || e.event === "document_question_denied"));
+    if (hit) { out.access = hit.payload.access; out.asked_as = hit.payload.key; out.audit_line = hit.line; }
+  }
+  // "All sources": the gateway answers per collection, so ask every readable collection at once and keep the answer
+  // whose best passage matched the question most strongly (lexical score), preferring answers that cite something.
+  async _askAll(persona, question, o) {
+    const names = await this._readable(this._keyFor(persona));
+    if (!names.length) return { status: 404, detail: "there are no documents you can read yet" };
+    const lastLine = await this._lastAuditLine();
+    const outs = await Promise.all(names.map((name) => this._askOne(persona, name, question, o)));
+    let best = null, bestName = null, bestScore = -1;
+    outs.forEach((out, i) => {
+      if (out.status !== 200) { best = best || out; return; }
+      const top = (out.sources || [])[0];
+      const lexical = top && top.scores ? Number(top.scores.bm25 || 0) : 0;
+      const score = (/^I don't know/.test(out.answer || "") ? 0 : 1000) + lexical;
+      out.sources = (out.sources || []).map((s) => ({ ...s, collection: names[i] }));
+      if (score > bestScore) { best = out; bestName = names[i]; bestScore = score; }
+    });
+    if (bestName) await this._attachDecision(best, bestName, lastLine, 10 + 2 * names.length);
+    return best;
   }
   async chat(persona, prompt) {
     const out = await this.req("POST", "/v1/chat/completions", { key: this._keyFor(persona), body: { messages: [{ role: "user", content: prompt }] } });
@@ -392,12 +440,9 @@ export class LiveAdapter {
   async evals() { return JSON.parse(await fetchText(new URL("data/rag_eval.json", location.href))); }
   // first-run sample data, through the real API
   async seedSamples() {
-    const m = window.CONSOLE_MANIFEST;
     const results = [];
-    for (const name of m.SAMPLES) results.push(await this.addText("policies", name, await fetchText(new URL(name, location.href)), []));
-    for (const item of m.RESTRICTED_SAMPLES) {
-      results.push(await this.addText("policies", item.file, await fetchText(new URL(item.file, location.href)), item.acl));
-    }
+    const cat = await libraryCatalog();
+    for (const d of cat.documents) results.push(await this.addText(d.collection, d.file, await fetchText(new URL(d.path, location.href)), d.acl));
     const existing = await this.keys();
     const have = new Set(Array.isArray(existing) ? existing.filter((k) => !k.revoked).map((k) => k.label) : []);
     for (const [label, groups] of [["hr-assistant", ["hr"]], ["eng-assistant", ["engineering"]], ["lobby-kiosk", []]]) {

@@ -25,6 +25,7 @@ jobs:
       - run: ruff format --check gateway tests scripts demo
       - run: pytest -q
       - run: python scripts/rag_eval.py --check
+      - run: python scripts/sample_library.py --check
       - run: python scripts/generate_sample_company.py --check
       - run: shellcheck scripts/*.sh
       - run: helm lint deploy/helm/local-llm-gateway --strict

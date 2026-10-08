@@ -1416,58 +1416,39 @@
  ],
  "collections": [
   {
+   "collection": "Staff policies",
+   "name": "policies",
+   "documents": 23,
+   "passages": 25,
+   "access": "All staff; compensation: HR only; payments runbook: engineering only; BSA procedure: compliance only"
+  },
+  {
    "collection": "Member services",
-   "documents": 214,
-   "passages": 6115,
+   "name": "member-services",
+   "documents": 12,
+   "passages": 12,
    "access": "All staff"
   },
   {
    "collection": "Lending",
-   "documents": 168,
-   "passages": 5581,
-   "access": "Lending, executive"
-  },
-  {
-   "collection": "Compliance and BSA",
-   "documents": 97,
-   "passages": 2664,
-   "access": "Compliance only"
-  },
-  {
-   "collection": "Human resources",
-   "documents": 121,
-   "passages": 3967,
-   "access": "All staff; compensation: HR only"
-  },
-  {
-   "collection": "IT and security",
-   "documents": 186,
-   "passages": 6210,
-   "access": "All staff; runbooks: IT only"
-  },
-  {
-   "collection": "Branch operations",
-   "documents": 143,
-   "passages": 4761,
-   "access": "Branch staff, facilities"
-  },
-  {
-   "collection": "Finance",
-   "documents": 88,
-   "passages": 2656,
-   "access": "Finance, executive"
-  },
-  {
-   "collection": "Policies (all staff)",
-   "documents": 211,
-   "passages": 6998,
+   "name": "lending",
+   "documents": 9,
+   "passages": 9,
    "access": "All staff"
   },
   {
-   "collection": "Board and committees",
-   "documents": 56,
-   "passages": 1532,
-   "access": "Executive, internal audit"
+   "collection": "Compliance",
+   "name": "compliance",
+   "documents": 6,
+   "passages": 6,
+   "access": "All staff; OFAC screening: compliance only"
+  },
+  {
+   "collection": "Branch operations",
+   "name": "branch-operations",
+   "documents": 7,
+   "passages": 7,
+   "access": "All staff, and the lobby kiosk"
   }
  ],
  "compliance": {
@@ -1486,10 +1467,10 @@
    "detail": "A branch employee asked how BSA referrals are decided. The BSA procedure was filtered out before retrieval; the answer cited the all-staff referral policy instead."
   },
   {
-   "date": "2026-09-29",
+   "date": "2026-10-01",
    "kind": "ops",
-   "title": "Lending guidelines refreshed: 168 documents re-indexed",
-   "detail": "The 2026 Q4 lending updates were ingested overnight; questions on loan terms now cite the new guide."
+   "title": "October auto loan rate sheet published and re-indexed",
+   "detail": "The new rate sheet replaced September's overnight; questions on auto loan rates now cite the October version."
   },
   {
    "date": "2026-09-22",

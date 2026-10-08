@@ -1,6 +1,6 @@
-# Branch Security Procedures (Cypress Harbor Credit Union, fictional sample)
+# Branch Security Procedures
 
-This is a fictional sample procedure for demonstration purposes only.
+This procedure applies to every branch and its staff.
 
 ## Opening and closing
 

@@ -2,10 +2,49 @@
 
 ## Unreleased
 
-The console is set in a business. 223 tests, RAG evals unchanged (no ACL leaks), and a 38-check browser smoke
-test across both console modes.
+The console is set in a business and opens on an employee assistant, the way an internal Copilot-style tool
+does, with a 57-document library behind it. 230 tests, RAG evals with no ACL leaks (hybrid citation accuracy
+0.837 → 0.884), and a 41-check browser smoke test across both console modes.
 
-### Console
+### Harbor Assistant
+- **Ask** is the landing screen: streamed answers with numbered citations and source cards; a citation opens
+  the document with the quoted passage highlighted, its owner, version, review date and who may read it.
+  Conversation history, suggested questions per person, copy, ask again, helpful / not helpful, ask as someone
+  else or compare two people side by side (`demo/assistant.js`).
+- **All sources I can read** (default) searches every collection the person may read. The access decision runs
+  per collection before any passage is scored; passages are then ranked together. In live mode the console asks
+  each readable collection in parallel and keeps the strongest answer.
+- Answers quote only sentences from the best-matching document, and a sentence holding a number from the
+  question wins over its neighbours. A question nothing answers well gets "I couldn't find that in the documents
+  you can access" instead of an unrelated quote (vector-similarity floor; console only, not applied to the eval).
+- A document retrieved for a question that contains instruction-like text shows a warning on the answer, cited
+  or not.
+
+### Console: views, navigation, themes
+- **Business and technical views** (header switch or `?view=technical`). The business view uses plain language
+  (access as "Restricted to the hr group", document titles, friendly audit-event names); the technical view adds
+  retrieval controls and scores, API keys and token limits, raw access-list entries, digests, the lock file,
+  ML-BOM and runtime modules.
+- Navigation regrouped as Assistant (Ask), Admin (Usage and impact, Documents, People and keys, Audit log) and
+  Governance (Access policy, Models, Answer quality, Settings). Overview is now **Usage and impact**.
+- Light and dark themes (follow the system; header toggle), a tour invite instead of an automatic tour, a
+  not-found page, and screens that need no engine (Ask, Usage and impact) render before Pyodide finishes.
+- Documents: titles, owners and review dates, a filter, and a plain-language access matrix. Audit log: paging
+  and a "Log intact" summary. Access policy: an "in effect now" summary above the JSON. Answer quality: labelled
+  as measured on the benchmark library.
+- The header keeps its controls at full size on narrower desktops; the breadcrumb gives way first.
+- Fixed: feedback buttons toggled twice per click after the chat re-rendered (stacked click listeners), and an
+  answer to a question sent while the chat re-rendered was painted into the old page and never shown.
+
+### Document library
+- `scripts/sample_library.py` writes 44 more documents across five collections (staff policies, member services,
+  lending, compliance, branch operations) and `demo/data/library.json`, the catalog the console and the usage
+  file read (owners, departments, versions, review dates, access lists). OFAC screening is restricted to
+  `group:compliance`. CI checks the library is current; `tests/test_sample_library.py` checks the catalog, that
+  the usage file's collections match it, and cross-collection answers and access.
+- The original documents lose the "(fictional sample)" title suffix: the workspace is labelled instead.
+
+### Console: business impact
 - **Overview › Business impact** for a sample company, Cypress Harbor Credit Union (fictional: 340 employees,
   10 departments, 11 branches). Over 7, 30 or 90 days: questions answered, answered from documents with
   citations, employees using it, hours saved and cost per answer (assumptions shown), restricted content
@@ -18,7 +57,7 @@ test across both console modes.
   sidebar (`demo/shell.js`, shared in design with the portfolio's other consoles).
 - Charts: the y axis of stacked columns sizes itself to its labels; horizontal bars take a label width.
 
-### Demo data
+### Demo data: sample company
 - `scripts/generate_sample_company.py` writes `demo/data/sample_company.json` from a fixed seed and stated
   assumptions; CI checks it's current, and `tests/test_sample_company.py` checks its arithmetic and that it's
   labelled fictional.

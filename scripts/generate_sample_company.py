@@ -81,17 +81,14 @@ TOPICS = [
     ("Other", 0.06),
 ]
 
-COLLECTIONS = [
-    ("Member services", 214, "All staff"),
-    ("Lending", 168, "Lending, executive"),
-    ("Compliance and BSA", 97, "Compliance only"),
-    ("Human resources", 121, "All staff; compensation: HR only"),
-    ("IT and security", 186, "All staff; runbooks: IT only"),
-    ("Branch operations", 143, "Branch staff, facilities"),
-    ("Finance", 88, "Finance, executive"),
-    ("Policies (all staff)", 211, "All staff"),
-    ("Board and committees", 56, "Executive, internal audit"),
-]
+LIBRARY = ROOT / "demo" / "data" / "library.json"  # written by scripts/sample_library.py
+ACCESS = {
+    "policies": "All staff; compensation: HR only; payments runbook: engineering only; BSA procedure: compliance only",
+    "member-services": "All staff",
+    "lending": "All staff",
+    "compliance": "All staff; OFAC screening: compliance only",
+    "branch-operations": "All staff, and the lobby kiosk",
+}
 
 ASSUMPTIONS = {
     "minutes_saved_per_answer": 6,
@@ -153,11 +150,17 @@ def build() -> dict:
             }
         )
     topics = [{"topic": t, "questions_30d": int(q30 * s * rng.uniform(0.94, 1.06))} for t, s in TOPICS]
-    collections = []
-    for name, docs, access in COLLECTIONS:
-        collections.append(
-            {"collection": name, "documents": docs, "passages": int(docs * rng.uniform(26, 34)), "access": access}
-        )
+    library = json.loads(LIBRARY.read_text())
+    collections = [
+        {
+            "collection": c["label"],
+            "name": c["name"],
+            "documents": c["documents"],
+            "passages": c["passages"],
+            "access": ACCESS[c["name"]],
+        }
+        for c in library["collections"]
+    ]
     notable = [
         {
             "date": "2026-10-05",
@@ -167,11 +170,11 @@ def build() -> dict:
             "before retrieval; the answer cited the all-staff referral policy instead.",
         },
         {
-            "date": "2026-09-29",
+            "date": "2026-10-01",
             "kind": "ops",
-            "title": "Lending guidelines refreshed: 168 documents re-indexed",
-            "detail": "The 2026 Q4 lending updates were ingested overnight; questions on loan terms now cite the "
-            "new guide.",
+            "title": "October auto loan rate sheet published and re-indexed",
+            "detail": "The new rate sheet replaced September's overnight; questions on auto loan rates now cite the "
+            "October version.",
         },
         {
             "date": "2026-09-22",

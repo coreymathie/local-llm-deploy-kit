@@ -4,6 +4,7 @@ import {
   $, $$, esc, fmt, pct, time, isError, errText, loading, empty, errorBox, statusPill, aclChips, sim, parseAcl,
   toast, openDrawer, openModal, closeOverlays, stackedColumns, hbars, groupedColumns,
 } from "./ui.js";
+import { chat, collectionLabel, docIcon, docMeta, docTitle, reviewed } from "./assistant.js";
 
 const REPO = "https://github.com/coreymathie/private-llm-platform/blob/main/";
 const signInHint = (S) => (S.A.mode === "live" ? 'Add an admin API key on <a href="#/settings">Settings</a>.' : "");
@@ -51,6 +52,7 @@ const money = (n) => {
   return "$" + Math.round(n).toLocaleString("en-US");
 };
 const shortDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const longDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 function ovTabs(active) {
   const tabs = [["business", "Business impact", "#/overview"], ["session", "This session", "#/overview/session"]];
@@ -95,7 +97,7 @@ function kpi(label, value, sub, d, sp) {
 
 async function overview(view, S) {
   if (S.sub === "session") return overviewSession(view, S);
-  view.innerHTML = head("Overview", "How the private assistant is serving the business.") + ovTabs("business") + loading("Loading the sample company…");
+  view.innerHTML = head("Usage and impact", "How the private assistant is serving the business.") + ovTabs("business") + loading("Loading…");
   if (!S.company) {
     const r = await fetch("./data/sample_company.json", { cache: "no-cache" });
     if (!r.ok) { view.innerHTML = head("Overview", "") + ovTabs("business") + errorBox({ status: r.status, detail: "Couldn't load the sample company data" }); return; }
@@ -111,13 +113,13 @@ async function overview(view, S) {
   const infra = a.infrastructure_per_month_usd * (range / 30);
   const series = (f) => days.map(f);
   const scale = range / 30;
-  const period = `${shortDate(days[0].date)} – ${shortDate(days[days.length - 1].date)}, 2026`;
+  const period = `${shortDate(days[0].date)} – ${longDate(days[days.length - 1].date)}`;
   view.innerHTML = head(
-    "Overview",
-    `How the private assistant is serving <b>${esc(co.name)}</b>. <span class="pill sample">Sample company</span> Fictional data, generated for this demo, so the platform can be judged at business scale.`,
+    "Usage and impact",
+    `How the private assistant is serving <b>${esc(co.name)}</b>'s employees.`,
     `<div class="seg" role="group" aria-label="Date range">${RANGES.map(([n, label]) => `<button type="button" data-range="${n}" aria-pressed="${n === range}">${label}</button>`).join("")}</div><a class="btn primary" href="#/chat">Ask a question</a>`,
   ) + ovTabs("business") + `
-  <div class="banner sample" role="note"><strong>Sample company data.</strong> ${esc(co.name)} is fictional: ${num(co.employees)} employees, ${co.branches} branches, ${money(co.assets_usd)} in assets. These numbers come from <code>${esc(data.generated_by)}</code> (seed ${esc(data.seed)}), not from a real deployment. Measured results are on <a href="#/evals">Evals</a>; requests made in this tab are on <a href="#/overview/session">This session</a>.</div>
+  ${S.bannerHidden ? "" : `<div class="banner sample" role="note" id="sampleBanner"><span><strong>Sample workspace.</strong> ${esc(co.name)} is a fictional credit union (${num(co.employees)} employees, ${co.branches} branches, ${money(co.assets_usd)} in assets). Its people, documents and usage numbers are invented for this demo<span class="tech-only"> by <code>${esc(data.generated_by)}</code> (seed ${esc(data.seed)})</span>; the results under <a href="#/evals">Answer quality</a> are measured on the real code.</span><button type="button" class="ghost sm" id="bannerX" aria-label="Dismiss the sample workspace note">Dismiss</button></div>`}
   <p class="muted small period">${esc(period)} · ${range} days${p ? ` · compared with the ${range} days before` : ""}</p>
   <div class="grid kpis four">
     ${kpi("Questions answered", num(t.answered), `${num(t.questions)} asked · ${num(Math.round(t.questions / range))} a day`, delta(t.answered, p?.answered), spark(series((d) => d.answered)))}
@@ -129,12 +131,12 @@ async function overview(view, S) {
     ${kpi("Answers rated helpful", pct1(t.helpful), `${num(t.thumbs_up + t.thumbs_down)} ratings from employees`, delta(t.helpful, p?.helpful, { kind: "pts" }), spark(series((d) => d.thumbs_up / Math.max(1, d.thumbs_up + d.thumbs_down))))}
     ${kpi("Cost per answer", `$${(infra / Math.max(1, t.answered)).toFixed(2)}`, `${money(infra)} for the GPU server over ${range} days`, delta(infra / Math.max(1, t.answered), p ? (a.infrastructure_per_month_usd * (range / 30)) / Math.max(1, p.answered) : null, { better: "down" }), spark(series((d) => d.answered)))}
   </div>
-  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Questions per day <span class="pill sample">sample</span></h2><p>Answered with citations, or nothing in the documents the employee may read.</p></div></div><div id="bizVolume"></div></div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Questions per day</h2><p>Answered with citations, or nothing in the documents the employee may read.</p></div></div><div id="bizVolume"></div></div>
   <div class="grid two" style="margin-top:16px">
-    <div class="card"><div class="card-head"><div><h2>Adoption by department <span class="pill sample">sample</span></h2><p>Employees who asked at least one question in the last 30 days.</p></div></div>${deptTable(data.departments)}</div>
+    <div class="card"><div class="card-head"><div><h2>Adoption by department</h2><p>Employees who asked at least one question in the last 30 days.</p></div></div>${deptTable(data.departments)}</div>
     <div class="stack">
-      <div class="card"><div class="card-head"><div><h2>What employees ask about <span class="pill sample">sample</span></h2><p>Questions by topic, ${range} days.</p></div></div><div id="bizTopics"></div></div>
-      <div class="card"><div class="card-head"><div><h2>Response time <span class="pill sample">sample</span></h2><p>From question to cited answer on the on-prem server. The gateway's own overhead is <a href="#/evals">measured</a> separately.</p></div></div>
+      <div class="card"><div class="card-head"><div><h2>What employees ask about</h2><p>Questions by topic, ${range} days.</p></div></div><div id="bizTopics"></div></div>
+      <div class="card"><div class="card-head"><div><h2>Response time</h2><p>From question to cited answer on the on-prem server. The gateway's own overhead is <a href="#/evals">measured</a> separately.</p></div></div>
         <div class="split-stats">
           <div><div class="label">Median</div><div class="value">${(t.p50_ms / 1000).toFixed(1)} s</div>${delta(t.p50_ms, p?.p50_ms, { better: "down" })}</div>
           <div><div class="label">95th percentile</div><div class="value">${(Math.max(...days.map((d) => d.p95_ms)) / 1000).toFixed(1)} s</div><span class="muted small">slowest day</span></div>
@@ -144,12 +146,12 @@ async function overview(view, S) {
     </div>
   </div>
   <div class="grid two" style="margin-top:16px">
-    <div class="card"><div class="card-head"><div><h2>Knowledge base <span class="pill sample">sample</span></h2><p>Collections, size and who may read them.</p></div><a class="btn sm" href="#/documents">Access matrix</a></div>${collectionsTable(data.collections)}</div>
-    <div class="card"><div class="card-head"><div><h2>Governance <span class="pill sample">sample</span></h2><p>The controls a compliance team and examiners ask about.</p></div></div>${governanceList(data.compliance, t)}</div>
+    <div class="card"><div class="card-head"><div><h2>Knowledge base</h2><p>Collections, size and who may read them.</p></div><a class="btn sm" href="#/documents">Open the library</a></div>${collectionsTable(data.collections)}</div>
+    <div class="card"><div class="card-head"><div><h2>Governance</h2><p>The controls a compliance team and examiners ask about.</p></div></div>${governanceList(data.compliance, t)}</div>
   </div>
   <div class="grid two" style="margin-top:16px">
-    <div class="card"><div class="card-head"><div><h2>Recent activity <span class="pill sample">sample</span></h2></div></div><ol class="events">${data.notable.map((n) => `<li class="ev-${esc(n.kind)}"><span class="ev-dot" aria-hidden="true"></span><div><div class="ev-meta">${esc(shortDate(n.date))} · ${esc({ access: "Access control", ops: "Operations", compliance: "Compliance" }[n.kind] || n.kind)}</div><h3>${esc(n.title)}</h3><p>${esc(n.detail)}</p></div></li>`).join("")}</ol></div>
-    <div class="card"><div class="card-head"><div><h2>About this workspace <span class="pill sample">fictional</span></h2></div></div>
+    <div class="card"><div class="card-head"><div><h2>Recent activity</h2></div></div><ol class="events">${data.notable.map((n) => `<li class="ev-${esc(n.kind)}"><span class="ev-dot" aria-hidden="true"></span><div><div class="ev-meta">${esc(shortDate(n.date))} · ${esc({ access: "Access control", ops: "Operations", compliance: "Compliance" }[n.kind] || n.kind)}</div><h3>${esc(n.title)}</h3><p>${esc(n.detail)}</p></div></li>`).join("")}</ol></div>
+    <div class="card"><div class="card-head"><div><h2>About this workspace</h2></div></div>
       <dl class="facts">
         <div><dt>Organization</dt><dd>${esc(co.name)}</dd></div>
         <div><dt>Industry</dt><dd>${esc(co.industry)}</dd></div>
@@ -162,6 +164,8 @@ async function overview(view, S) {
     </div>
   </div>`;
   view.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { S.range = Number(b.dataset.range); overview(view, S); }));
+  const bx = $("#bannerX", view);
+  if (bx) bx.onclick = () => { S.bannerHidden = true; $("#sampleBanner", view).remove(); };
   const vol = $("#bizVolume", view), top = $("#bizTopics", view);
   vol.innerHTML = stackedColumns(days.map((d) => ({ label: shortDate(d.date), answered: d.answered, no_answer: d.no_answer })), [
     { key: "answered", label: "Answered with citations", color: "var(--series-1)" },
@@ -179,7 +183,7 @@ function deptTable(rows) {
 
 function collectionsTable(rows) {
   const total = rows.reduce((a, r) => a + r.documents, 0), passages = rows.reduce((a, r) => a + r.passages, 0);
-  return `<div class="table-wrap"><table><thead><tr><th>Collection</th><th class="num">Documents</th><th>Who may read</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.collection)}<span class="share">${num(r.passages)} passages</span></td><td class="num">${num(r.documents)}</td><td class="small">${esc(r.access)}</td></tr>`).join("")}</tbody><tfoot><tr><th>Total</th><th class="num">${num(total)}</th><th class="small">${num(passages)} passages indexed</th></tr></tfoot></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Collection</th><th class="num">Documents</th><th>Who may read</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.collection)}<span class="share tech-only">${num(r.passages)} passages</span></td><td class="num">${num(r.documents)}</td><td class="small">${esc(r.access)}</td></tr>`).join("")}</tbody><tfoot><tr><th>Total</th><th class="num">${num(total)}</th><th class="small"><span class="tech-only">${num(passages)} passages indexed</span></th></tr></tfoot></table></div>`;
 }
 
 function governanceList(c, t) {
@@ -262,204 +266,6 @@ async function overviewSession(view, S) {
 }
 
 // =============================================================================================
-// Chat
-// =============================================================================================
-
-const SUGGESTED = [
-  "What is the level 3 salary band?",
-  "How fast must the payments on-call engineer acknowledge a page?",
-  "What is the hotel cap per night?",
-  "How long are audit logs retained?",
-  "Do I need a VPN in a coffee shop?",
-  "What should I do if my laptop is stolen?",
-];
-
-function renderAnswer(text, idx) {
-  return esc(text).replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_, nums) =>
-    nums.split(/\s*,\s*/).map((n) => `<button class="cite" data-msg="${idx}" data-n="${n}" aria-label="Show source ${n}">${n}</button>`).join(""));
-}
-
-function resultMeta(S, res) {
-  const bits = [statusPill(res.status)];
-  if (res.asked_as) bits.push(`<span>as <code>${esc(res.asked_as)}</code></span>`);
-  if (res.access) {
-    const a = res.access;
-    bits.push(`<span class="pill ${a.decision === "allow" ? "ok" : "bad"}" title="Decided before retrieval">${esc(a.decision)} · ${esc(a.basis)}</span>`);
-    if (S.A.caps.hiddenCounts || a.documents_hidden !== undefined) bits.push(`<span>${a.documents_visible} visible / ${a.documents_hidden} hidden docs</span>`);
-  }
-  if (res.retrieval) bits.push(`<span>${esc(res.retrieval.mode)}${res.retrieval.reranker !== "none" ? " + " + esc(res.retrieval.reranker) : ""}</span>`);
-  if (res.timings_ms) bits.push(`<span title="access · retrieval · generation">${res.timings_ms.access} / ${res.timings_ms.retrieval} / ${res.timings_ms.generation} ms</span>`);
-  if (res.usage) bits.push(`<span>${fmt(res.usage.total_tokens)} tokens</span>`);
-  if (res.model) bits.push(`<code>${esc(res.model)}</code>`);
-  if (S.A.mode === "demo" && res.status === 200) bits.push(sim("extractive · simulated model"));
-  if (res.audit_line) bits.push(`<a href="#/audit?line=${res.audit_line}">audit line ${res.audit_line}</a>`);
-  return bits.join("");
-}
-
-function botBody(S, res, idx, j) {
-  if (res.status !== 200) {
-    return `<div class="answer">${statusPill(res.status)} ${esc(errText({ detail: res.detail }))}</div>
-      <div class="meta">${res.access ? resultMeta(S, res) : ""}${res.status === 403 ? "<span>Raw chat needs the <code>user</code> role; collection readers can only ask their collections.</span>" : ""}${res.status === 404 ? "<span>Same response as for a collection that doesn't exist: no existence oracle.</span>" : ""}</div>`;
-  }
-  const text = res.answer ?? res.content ?? "";
-  const flagged = (res.sources || []).filter((s) => s.injection_flags && s.injection_flags.length);
-  return `<div class="answer" data-answer>${renderAnswer(text, `${idx}:${j}`)}</div>
-    ${flagged.length ? `<div class="banner warn" style="margin-top:8px">Source ${flagged.map((s) => `[${s.n}]`).join(", ")} looks like a prompt injection (${esc([...new Set(flagged.flatMap((s) => s.injection_flags))].join(", "))}). It was flagged and audited, and its instruction was not followed. Flags are defense in depth and don't make injection impossible (<a href="${REPO}docs/adr/0004-prompt-injection-defense-in-depth.md">ADR 0004</a>).</div>` : ""}
-    <div class="meta">${resultMeta(S, res)}</div>`;
-}
-
-function sourcesPanel(S) {
-  const c = S.chat;
-  const msg = c.thread[c.selected];
-  if (!msg || msg.role !== "bot") return empty("Sources for an answer appear here: title, score components, the access rule that admitted each document, and whether the answer cited it.");
-  const tabs = msg.results.length > 1
-    ? `<div class="seg" style="margin-bottom:10px">${msg.results.map((r, j) => `<button data-srctab="${j}" aria-pressed="${j === c.srcTab}">${esc(r.personaName)}</button>`).join("")}</div>` : "";
-  const res = msg.results[Math.min(c.srcTab, msg.results.length - 1)].res;
-  if (msg.kind === "model") return tabs + empty("Model-only chat doesn't retrieve documents.");
-  if (res.status !== 200) return tabs + empty("No sources: the request was refused before retrieval.");
-  return tabs + (res.sources || []).map((s) => `
-    <div class="source" data-src="${s.n}">
-      <div class="head"><div class="title">[${s.n}] ${esc(s.title)}</div>${s.cited ? '<span class="pill ok">cited</span>' : '<span class="pill">not cited</span>'}</div>
-      <div class="scores"><span class="pill info">score ${s.score}</span>${Object.entries(s.scores || {}).map(([k, v]) => `<span class="pill">${esc(k)} ${typeof v === "number" ? v.toFixed(4) : esc(v)}</span>`).join("")}<span class="pill">chunk ${s.chunk}</span>
-      ${(s.injection_flags || []).map((f) => `<span class="pill bad">injection: ${esc(f)}</span>`).join("")}</div>
-      <div class="excerpt">${esc(s.excerpt)}</div>
-    </div>`).join("");
-}
-
-function whoSummary(S, w, name) {
-  if (!w) return `<span class="muted">${loading()}</span>`;
-  if (isError(w)) return `<span class="pill bad">${esc(errText(w))}</span>`;
-  return `<span><b>${esc(name)}</b> · <code>${esc(w.label)}</code></span>
-    <span>roles ${w.roles.length ? w.roles.map((r) => `<span class="pill info">${esc(r)}</span>`).join(" ") : '<span class="pill bad">none</span>'}</span>
-    <span>groups ${w.groups.length ? w.groups.map((g) => `<span class="pill">${esc(g)}</span>`).join(" ") : '<span class="muted">none</span>'}</span>
-    <span>${w.can_chat ? '<span class="pill ok">can chat</span>' : '<span class="pill warn">documents only</span>'}</span>
-    <span class="muted">sees ${w.visible.length} document(s)${w.hidden_count !== undefined ? ` · ${w.hidden_count} hidden from this caller` : ""}</span>`;
-}
-
-async function chat(view, S) {
-  const A = S.A, c = S.chat;
-  if (!S.personas.some((p) => p.id === c.persona)) c.persona = S.personas[0]?.id;
-  if (!S.personas.some((p) => p.id === c.persona2)) c.persona2 = S.personas[Math.min(2, S.personas.length - 1)]?.id;
-  const cols = await A.collections();
-  const colNames = Array.isArray(cols) ? cols.map((x) => x.name) : [];
-  if (!colNames.includes(c.collection) && colNames.length) c.collection = colNames[0];
-  view.innerHTML = head("Chat", "Answers come only from documents the caller may read, with numbered citations. Switch identity to see permission-aware retrieval: the access decision is made before any passage is scored.") + `
-  <div class="card" style="margin-bottom:16px">
-    <div class="toolbar">
-      <label class="field">Ask as<select id="persona">${personaOptions(S, c.persona)}</select></label>
-      <label class="check" style="padding-bottom:8px"><input type="checkbox" id="compare" ${c.compare ? "checked" : ""}/> Compare with</label>
-      <label class="field" ${c.compare ? "" : "hidden"} id="p2wrap">Second identity<select id="persona2">${personaOptions(S, c.persona2)}</select></label>
-      <label class="field">Collection<select id="collection">${colNames.map((n) => `<option ${n === c.collection ? "selected" : ""}>${esc(n)}</option>`).join("") || "<option>policies</option>"}</select></label>
-      <label class="field">Answer from<select id="kind"><option value="rag" ${c.kind === "rag" ? "selected" : ""}>Documents, cited</option><option value="model" ${c.kind === "model" ? "selected" : ""}>Model only (raw chat)</option></select></label>
-      <label class="field">Retrieval<select id="mode">${["hybrid", "bm25", "vector"].map((m) => `<option ${m === c.mode ? "selected" : ""}>${m}</option>`).join("")}</select></label>
-      <label class="check" style="padding-bottom:8px"><input type="checkbox" id="rerank" ${c.reranker === "lexical" ? "checked" : ""}/> Lexical reranker</label>
-      <label class="field">Passages<select id="topk">${[2, 4, 6, 8, 12].map((k) => `<option ${k === c.top_k ? "selected" : ""}>${k}</option>`).join("")}</select></label>
-    </div>
-    <div class="whocard" id="who" style="margin-top:12px"></div>
-    <div class="whocard" id="who2" style="margin-top:6px" ${c.compare ? "" : "hidden"}></div>
-  </div>
-  <div class="chat-layout">
-    <div class="card">
-      <div class="thread" id="thread" aria-live="polite"></div>
-      <div class="suggest" id="suggest">${SUGGESTED.map((q) => `<button data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
-      <form class="composer" id="composer">
-        <label class="sr-only" for="prompt">Question</label>
-        <textarea id="prompt" rows="2" placeholder="Ask a question about the documents…">${esc(c.draft || "")}</textarea>
-        <button class="primary" id="send" type="submit">Send</button>
-      </form>
-      <div class="row" style="margin-top:8px"><button class="ghost sm" id="clear">Clear conversation</button>
-      ${A.mode === "demo" ? `<span class="muted small">No LLM runs in the browser: answers quote the best-matching sentences of the retrieved passages (extractive). In live mode the gateway's configured model answers.</span>` : ""}</div>
-    </div>
-    <div class="card"><div class="card-head"><div><h2>Sources</h2><p>What retrieval returned for the selected answer</p></div></div><div id="sources"></div></div>
-  </div>`;
-
-  const renderThread = () => {
-    const t = $("#thread", view);
-    if (!c.thread.length) { t.innerHTML = empty("Ask a question, or pick a suggestion below."); }
-    else {
-      t.innerHTML = c.thread.map((m, i) => m.role === "user"
-        ? `<div class="msg user">${esc(m.text)}</div>`
-        : m.pending ? `<div class="msg bot">${loading("Retrieving and answering…")}</div>`
-        : `<div class="msg bot ${i === c.selected ? "selected" : ""}" data-msg-idx="${i}">${m.results.length > 1
-          ? `<div class="compare">${m.results.map((r, j) => `<div><div class="small" style="margin-bottom:6px"><b>${esc(r.personaName)}</b></div>${botBody(S, r.res, i, j)}</div>`).join("")}</div>`
-          : botBody(S, m.results[0].res, i, 0)}</div>`).join("");
-      t.scrollTop = t.scrollHeight;
-    }
-    $("#sources", view).innerHTML = sourcesPanel(S);
-  };
-  const refreshWho = async () => {
-    $("#who", view).innerHTML = whoSummary(S, null);
-    const w = await A.whoami(c.persona, c.collection);
-    $("#who", view).innerHTML = whoSummary(S, w, personaName(S, c.persona));
-    if (c.compare) {
-      const w2 = await A.whoami(c.persona2, c.collection);
-      $("#who2", view).innerHTML = whoSummary(S, w2, personaName(S, c.persona2));
-    }
-  };
-
-  const send = async (text) => {
-    text = text.trim();
-    if (!text) return;
-    c.draft = "";
-    $("#prompt", view).value = "";
-    const ids = c.compare ? [c.persona, c.persona2] : [c.persona];
-    c.thread.push({ role: "user", text });
-    const msg = { role: "bot", kind: c.kind, pending: true, results: [] };
-    c.thread.push(msg);
-    renderThread();
-    $("#send", view).disabled = true;
-    try {
-      for (const id of ids) {
-        const res = c.kind === "model"
-          ? await A.chat(id, text)
-          : await A.ask(id, c.collection, text, { top_k: c.top_k, mode: c.mode, reranker: c.reranker });
-        msg.results.push({ persona: id, personaName: personaName(S, id), res });
-      }
-    } catch (e) {
-      msg.results.push({ persona: ids[0], personaName: personaName(S, ids[0]), res: { status: 0, detail: String(e.message || e) } });
-    }
-    msg.pending = false;
-    c.selected = c.thread.length - 1;
-    c.srcTab = 0;
-    $("#send", view).disabled = false;
-    renderThread();
-    if (S.A.mode === "demo") refreshWho();
-  };
-
-  $("#persona", view).onchange = (e) => { c.persona = e.target.value; refreshWho(); };
-  $("#persona2", view).onchange = (e) => { c.persona2 = e.target.value; refreshWho(); };
-  $("#compare", view).onchange = (e) => { c.compare = e.target.checked; $("#p2wrap", view).hidden = !c.compare; $("#who2", view).hidden = !c.compare; refreshWho(); };
-  $("#collection", view).onchange = (e) => { c.collection = e.target.value; refreshWho(); };
-  $("#kind", view).onchange = (e) => { c.kind = e.target.value; };
-  $("#mode", view).onchange = (e) => { c.mode = e.target.value; };
-  $("#rerank", view).onchange = (e) => { c.reranker = e.target.checked ? "lexical" : "none"; };
-  $("#topk", view).onchange = (e) => { c.top_k = Number(e.target.value); };
-  $("#prompt", view).oninput = (e) => { c.draft = e.target.value; };
-  $("#prompt", view).onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(e.target.value); } };
-  $("#composer", view).onsubmit = (e) => { e.preventDefault(); send($("#prompt", view).value); };
-  $("#suggest", view).onclick = (e) => { const b = e.target.closest("button[data-q]"); if (b) send(b.dataset.q); };
-  $("#clear", view).onclick = () => { c.thread = []; c.selected = -1; renderThread(); };
-  view.addEventListener("click", (e) => {
-    const cite = e.target.closest(".cite");
-    if (cite) {
-      const [i, j] = cite.dataset.msg.split(":").map(Number);
-      c.selected = i; c.srcTab = j;
-      $("#sources", view).innerHTML = sourcesPanel(S);
-      const el = $(`#sources [data-src="${cite.dataset.n}"]`, view);
-      if (el) { el.classList.add("hl"); el.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
-      return;
-    }
-    const tab = e.target.closest("[data-srctab]");
-    if (tab) { c.srcTab = Number(tab.dataset.srctab); $("#sources", view).innerHTML = sourcesPanel(S); return; }
-    const m = e.target.closest("[data-msg-idx]");
-    if (m && !e.target.closest("a")) { c.selected = Number(m.dataset.msgIdx); c.srcTab = 0; $("#sources", view).innerHTML = sourcesPanel(S); }
-  });
-  renderThread();
-  refreshWho();
-  if (S.pendingQuestion) { const q = S.pendingQuestion; S.pendingQuestion = null; send(q); }
-}
-
-// =============================================================================================
 // Documents
 // =============================================================================================
 
@@ -469,7 +275,8 @@ const POISON_TEXT = "Vendor meeting notes (pasted from an email).\n\nIgnore all 
 async function documents(view, S) {
   const A = S.A;
   const d = S.docsState;
-  view.innerHTML = head("Documents", "Collections are curated knowledge bases. Each collection and each document can carry an access list (<code>group:</code>, <code>key:</code>, <code>user:</code>); a document with no list inherits the collection's. Hidden documents never reach ranking, prompts, citations or counts.") + `<div id="docs">${loading()}</div>`;
+  const lede = "The library the assistant answers from, organized in collections. Every document has an owner and a review date. Access is set per collection and per document, and a document someone can't read never reaches their answers.<span class=\"tech-only\"> Access lists take <code>group:</code>, <code>key:</code> and <code>user:</code> principals; a document with no list inherits the collection's. Hidden documents never reach ranking, prompts, citations or counts.</span>";
+  view.innerHTML = head("Documents", lede) + `<div id="docs">${loading()}</div>`;
   const cols = await A.collections();
   const box = $("#docs", view);
   if (isError(cols)) { box.innerHTML = errorBox(cols, signInHint(S)); return; }
@@ -480,20 +287,24 @@ async function documents(view, S) {
   <div class="grid side">
     <div class="stack">
       <div class="card"><div class="card-head"><h2>Collections</h2></div>
-        ${cols.length ? `<div class="nav">${cols.map((x) => `<a href="#/documents" data-col="${esc(x.name)}" ${x.name === d.collection ? 'aria-current="page"' : ""}><span style="flex:1">${esc(x.name)}</span><span class="pill">${x.documents} docs · ${x.chunks} passages</span></a>`).join("")}</div>` : empty("No collections yet. Add a document to create one.")}
+        ${cols.length ? `<div class="nav">${cols.map((x) => `<a href="#/documents" data-col="${esc(x.name)}" ${x.name === d.collection ? 'aria-current="page"' : ""}><span style="flex:1">${esc(collectionLabel(x.name))}</span><span class="pill">${x.documents}<span class="tech-only"> docs · ${x.chunks} passages</span></span></a>`).join("")}</div>` : empty("No collections yet. Add a document to create one.")}
       </div>
-      ${current ? `<div class="card"><div class="card-head"><div><h2>Collection access</h2><p>Who may read <code>${esc(d.collection)}</code></p></div><button class="sm" id="editColAcl">Edit</button></div>
-        ${aclChips(current.acl, matrix && matrix.default_access ? `no list: default access is ${matrix.default_access}` : "no list")}
-        <p class="muted small" style="margin-top:8px">Admins and <code>reader:${esc(d.collection)}</code> roles read every collection; with no list, <code>GATEWAY_COLLECTION_DEFAULT_ACCESS</code> applies to the <code>user</code> role.</p></div>` : ""}
+      ${current ? `<div class="card"><div class="card-head"><div><h2>Collection access</h2><p>Who may read ${esc(collectionLabel(d.collection))}</p></div><button class="sm" id="editColAcl">Edit</button></div>
+        ${aclChips(current.acl, matrix && matrix.default_access ? (matrix.default_access === "open" ? "Everyone signed in" : "Only people granted access") : "no list")}
+        <p class="muted small tech-only" style="margin-top:8px">Admins and <code>reader:${esc(d.collection)}</code> roles read every collection; with no list, <code>GATEWAY_COLLECTION_DEFAULT_ACCESS</code> applies to the <code>user</code> role.</p></div>` : ""}
     </div>
     <div class="stack">
-      <div class="card"><div class="card-head"><div><h2>Document library</h2><p>${current ? `${docs.length} document(s) in <code>${esc(d.collection)}</code>` : ""}</p></div></div>
-        ${isError(docs) ? errorBox(docs) : docs.length ? `<div class="table-wrap"><table id="docTable"><thead><tr><th>Title</th><th class="num">Passages</th><th class="num">Chars</th><th>Access list</th><th>Added</th><th></th></tr></thead><tbody>
-          ${docs.map((x) => `<tr data-doc="${esc(x.id)}"><td><b>${esc(x.title)}</b><div class="muted tiny mono">${esc(x.id)}</div></td><td class="num">${x.chunks}</td><td class="num">${fmt(x.chars)}</td><td>${aclChips(x.acl)}</td><td class="small">${esc(x.added_by)}<div class="muted tiny">${time(x.created_at)}</div></td>
-            <td><div class="row" style="flex-wrap:nowrap"><button class="sm" data-act="acl" data-id="${esc(x.id)}">Access</button><button class="sm danger" data-act="del" data-id="${esc(x.id)}">Remove</button></div></td></tr>`).join("")}
+      <div class="card"><div class="card-head"><div><h2>${current ? esc(collectionLabel(d.collection)) : "Documents"}</h2><p>${current ? `${docs.length} document(s)` : ""}</p></div>
+        <label class="doc-search"><span class="sr-only">Filter documents</span><input type="search" id="docFilter" placeholder="Filter by title or owner" value="${esc(d.filter || "")}"/></label></div>
+        ${isError(docs) ? errorBox(docs) : docs.length ? `<div class="table-wrap"><table id="docTable"><thead><tr><th>Document</th><th class="hide-sm">Owner</th><th class="hide-sm">Reviewed</th><th>Who can read</th><th class="tech-only num">Passages</th><th></th></tr></thead><tbody>
+          ${docs.map((x) => { const m = docMeta(x.title); return `<tr data-doc="${esc(x.id)}" data-text="${esc((docTitle(x.title) + " " + (m?.owner || "") + " " + (m?.department || "")).toLowerCase())}"><td><div class="doc-cell">${docIcon(m?.type)}<div><b>${esc(docTitle(x.title))}</b><div class="muted tiny">${m ? `v${esc(m.version)}` : "added in this session"}<span class="tech-only mono"> · ${esc(x.title)} · ${esc(x.id)}</span></div></div></div></td>
+            <td class="small hide-sm">${m ? `${esc(m.owner)}<div class="muted tiny">${esc(m.department)}</div>` : esc(x.added_by)}</td>
+            <td class="small hide-sm nw">${m ? esc(reviewed(m.reviewed)) : time(x.created_at)}</td>
+            <td>${x.acl && x.acl.length ? aclChips(x.acl) : '<span class="muted small">Same as the collection</span>'}</td><td class="tech-only num">${x.chunks}</td>
+            <td><div class="row" style="flex-wrap:nowrap"><button class="sm" data-act="acl" data-id="${esc(x.id)}">Access</button><button class="sm ghost danger" data-act="del" data-id="${esc(x.id)}" aria-label="Remove ${esc(docTitle(x.title))}">Remove</button></div></td></tr>`; }).join("")}
           </tbody></table></div>` : empty("This collection is empty.")}
       </div>
-      <div class="card"><div class="card-head"><div><h2>Add a document</h2><p>Chunked, embedded and stored by <code>gateway/rag.py</code>${A.mode === "demo" ? " (embeddings: hashed bag-of-words, simulated)" : ""}. Admin only.</p></div>
+      <div class="card"><div class="card-head"><div><h2>Add a document</h2><p>Admins only. The assistant can answer from it as soon as it's added.<span class="tech-only"> Chunked, embedded and stored by <code>gateway/rag.py</code>${A.mode === "demo" ? " (embeddings: hashed bag-of-words, simulated)" : ""}.</span></p></div>
         <div class="seg"><button data-addtab="paste" aria-pressed="${d.addTab === "paste"}">Paste text</button><button data-addtab="upload" aria-pressed="${d.addTab === "upload"}">Upload file</button></div></div>
         <form id="addForm" class="stack">
           <div class="grid two">
@@ -504,16 +315,20 @@ async function documents(view, S) {
           <label class="field">Text<textarea id="addText" rows="5" placeholder="Paste policy text…" required></textarea></label>`
           : `<label class="field">File (.md, .txt${A.mode === "live" ? ", .pdf" : ""}, .csv, .json, .html)<input type="file" id="addFile" required/></label>`}
           <div class="row"><button class="primary" type="submit">Add document</button>
-          <button type="button" id="poisonBtn" title="A document that tries to give the model instructions">Add an untrusted document (injection test)</button></div>
+          <button type="button" id="poisonBtn" class="tech-only" title="A document that tries to give the model instructions">Add an untrusted document (injection test)</button></div>
         </form>
       </div>
-      <div class="card"><div class="card-head"><div><h2>Access matrix</h2><p>Who can read what in <code>${esc(d.collection || "")}</code>, decided by <code>rag.access_for()</code> exactly as for a question. Hover a cell for the rule.</p></div></div>
+      <div class="card"><div class="card-head"><div><h2>Who can read what</h2><p>Each person and app against each document in ${esc(collectionLabel(d.collection || ""))}, decided exactly as for a question.<span class="tech-only"> By <code>rag.access_for()</code>. Hover a cell for the rule.</span></p></div></div>
         <div id="matrix">${matrixTable(matrix)}</div>
       </div>
     </div>
   </div>`;
 
   const rerender = async () => { S.titles = null; await documents(view, S); };
+  const filter = $("#docFilter", view);
+  const applyFilter = () => { const q = (d.filter || "").toLowerCase(); $$("#docTable tbody tr", view).forEach((tr) => { tr.hidden = !!q && !tr.dataset.text.includes(q); }); };
+  if (filter) filter.oninput = (e) => { d.filter = e.target.value; applyFilter(); };
+  applyFilter();
   $$("[data-col]", view).forEach((a) => (a.onclick = (e) => { e.preventDefault(); d.collection = a.dataset.col; rerender(); }));
   $$("[data-addtab]", view).forEach((b) => (b.onclick = () => { d.addTab = b.dataset.addtab; rerender(); }));
   const editColAcl = $("#editColAcl", view);
@@ -528,11 +343,11 @@ async function documents(view, S) {
     if (!b) return;
     const doc = docs.find((x) => x.id === b.dataset.id);
     if (b.dataset.act === "del") {
-      if (!confirm(`Remove ${doc.title}? Its passages are deleted.`)) return;
+      if (!confirm(`Remove ${docTitle(doc.title)}? The assistant stops answering from it.`)) return;
       const out = await A.removeDocument(d.collection, doc.id);
       if (isError(out)) toast(errText(out), "bad"); else { toast("Document removed (audited)"); rerender(); }
     } else {
-      aclModal(`Document access: ${doc.title}`, doc.acl, "Empty: inherit the collection's access.", async (acl) => {
+      aclModal(`Who can read ${docTitle(doc.title)}`, doc.acl, "Empty: inherit the collection's access.", async (acl) => {
         const out = await A.setDocumentAcl(d.collection, doc.id, acl);
         if (isError(out)) return out;
         toast("Document access updated (audited)"); rerender();
@@ -565,12 +380,12 @@ function matrixTable(m) {
   if (!m) return empty("No collection selected.");
   if (isError(m)) return errorBox(m);
   if (!m.documents.length) return empty("No documents.");
-  return `<div class="table-wrap"><table class="matrix"><thead><tr><th>Caller</th><th>Roles · groups</th><th>Collection</th>${m.documents.map((x) => `<th class="doc">${esc(x.title)}</th>`).join("")}</tr></thead><tbody>
-    ${m.rows.map((r) => `<tr><td><b>${esc(r.persona || r.label)}</b>${r.persona ? `<div class="muted tiny mono">${esc(r.label)}</div>` : ""}<div class="muted tiny">${esc(r.kind === "oidc_group" ? "any member of this IdP group" : r.kind === "oidc" ? "SSO token" : "API key")}</div></td>
-      <td class="small">${r.roles.map((x) => `<span class="pill info">${esc(x)}</span>`).join(" ") || '<span class="pill bad">no role</span>'} ${r.groups.map((g) => `<span class="pill">${esc(g)}</span>`).join(" ")}</td>
+  return `<div class="table-wrap"><table class="matrix"><thead><tr><th>Person or app</th><th class="tech-only">Roles · groups</th><th>Collection</th>${m.documents.map((x) => `<th class="doc">${esc(docTitle(x.title))}</th>`).join("")}</tr></thead><tbody>
+    ${m.rows.map((r) => `<tr><td><b>${esc(r.persona || r.label)}</b>${r.persona ? `<div class="muted tiny mono tech-only">${esc(r.label)}</div>` : ""}<div class="muted tiny">${esc(r.kind === "oidc_group" ? "anyone in this sign-in group" : r.kind === "oidc" ? "employee (single sign-on)" : "app or device key")}</div></td>
+      <td class="small tech-only">${r.roles.map((x) => `<span class="pill info">${esc(x)}</span>`).join(" ") || '<span class="pill bad">no role</span>'} ${r.groups.map((g) => `<span class="pill">${esc(g)}</span>`).join(" ")}</td>
       <td class="cell ${r.collection.allowed ? "yes" : "no"}" data-tip="${esc(r.collection.basis)}" tabindex="0">${r.collection.allowed ? "✓" : "✕"}</td>
       ${m.documents.map((x) => { const b = r.documents[x.id]; return `<td class="cell ${b ? "yes" : "no"}" data-tip="${esc(b || (r.collection.allowed ? "document_acl:no_match" : r.collection.basis))}" tabindex="0" aria-label="${b ? "can read" : "cannot read"}">${b ? "✓" : "–"}</td>`; }).join("")}</tr>`).join("")}
-  </tbody></table></div><p class="muted small" style="margin-top:8px">✓ readable · – hidden. Rows: every active API key${m.rows.some((r) => r.kind === "oidc_group") ? ", plus one member of each IdP group mapped in GATEWAY_OIDC_GROUP_ROLES" : ""}${m.rows.some((r) => r.persona) ? ", and the demo personas" : ""}.</p>`;
+  </tbody></table></div><p class="muted small" style="margin-top:8px">✓ can read · – hidden from them.<span class="tech-only"> Rows: every active API key${m.rows.some((r) => r.kind === "oidc_group") ? ", plus one member of each IdP group mapped in GATEWAY_OIDC_GROUP_ROLES" : ""}${m.rows.some((r) => r.persona) ? ", and the demo personas" : ""}.</span></p>`;
 }
 
 function aclModal(title, acl, hint, save) {
@@ -596,7 +411,7 @@ function aclModal(title, acl, hint, save) {
 
 async function users(view, S) {
   const A = S.A;
-  view.innerHTML = head("Users & Keys", "One API key per application, and SSO users whose IdP groups map to roles. Every request is rate-limited per caller; every key change is audited.") + `<div id="uk">${loading()}</div>`;
+  view.innerHTML = head("People and keys", "Employees sign in with the credit union's single sign-on, and their sign-in groups decide what they can do. Apps and devices, like the lobby kiosk, use keys. Every request is rate-limited and every change is logged.") + `<div id="uk">${loading()}</div>`;
   const [keys, rl, tokenUsers, pol] = await Promise.all([A.keys(), A.rateLimits(), A.users(), A.policy()]);
   const box = $("#uk", view);
   if (isError(keys)) { box.innerHTML = errorBox(keys, signInHint(S)); return; }
@@ -604,19 +419,19 @@ async function users(view, S) {
   const limit = rl.limit_per_min;
   const roles = pol.policy ? pol.policy.GATEWAY_OIDC_GROUP_ROLES : {};
   box.innerHTML = `
-  <div class="card"><div class="card-head"><div><h2>API keys</h2><p>Rate limit: <b>${fmt(limit)}</b> requests per minute per key (<code>GATEWAY_RATE_LIMIT_PER_MIN</code>, editable on Policies). Key values are shown once, at creation.</p></div></div>
-    <div class="table-wrap"><table id="keysTable"><thead><tr><th>Label</th><th>Key</th><th>Role · groups</th><th>Status</th><th class="num">Requests</th><th class="num">Tokens</th><th class="num">This minute</th><th></th></tr></thead><tbody>
-    ${keys.map((k) => `<tr data-label="${esc(k.label)}"><td><b>${esc(k.label)}</b><div class="muted tiny">${time(k.created_at)}</div></td><td class="mono small">${esc(k.masked)}</td>
+  <div class="card"><div class="card-head"><div><h2>App and device keys</h2><p>Each app gets its own key, limited to <b>${fmt(limit)}</b> requests a minute. A key is shown once, when it's created.<span class="tech-only"> (<code>GATEWAY_RATE_LIMIT_PER_MIN</code>, editable on Access policy.)</span></p></div></div>
+    <div class="table-wrap"><table id="keysTable"><thead><tr><th>Name</th><th class="tech-only">Key</th><th>Can do</th><th>Status</th><th class="num">Requests</th><th class="num tech-only">Tokens</th><th class="num hide-sm">This minute</th><th></th></tr></thead><tbody>
+    ${keys.map((k) => `<tr data-label="${esc(k.label)}"><td><b>${esc(k.label)}</b><div class="muted tiny">${time(k.created_at)}</div></td><td class="mono small tech-only">${esc(k.masked)}</td>
       <td>${k.is_admin ? '<span class="pill info">admin</span>' : '<span class="pill">user</span>'} ${(k.groups || []).map((g) => `<span class="pill">group:${esc(g)}</span>`).join(" ")}</td>
       <td>${k.revoked ? '<span class="pill bad">revoked</span>' : '<span class="pill ok">active</span>'}</td>
-      <td class="num">${fmt(k.requests_total)}</td><td class="num">${fmt(k.tokens_total)}</td>
-      <td class="num">${k.revoked ? "–" : `${fmt(windowOf.get(k.label + k.masked) ?? 0)} / ${fmt(limit)}`}</td>
-      <td><div class="row" style="flex-wrap:nowrap">${k.revoked ? "" : `<button class="sm" data-act="send" data-id="${esc(k.id)}">Send</button><button class="sm" data-act="burst" data-id="${esc(k.id)}" title="Send limit + 2 requests at once">Burst</button><button class="sm danger" data-act="revoke" data-id="${esc(k.id)}">Revoke</button>`}</div></td></tr>`).join("")}
+      <td class="num">${fmt(k.requests_total)}</td><td class="num tech-only">${fmt(k.tokens_total)}</td>
+      <td class="num hide-sm">${k.revoked ? "–" : `${fmt(windowOf.get(k.label + k.masked) ?? 0)} / ${fmt(limit)}`}</td>
+      <td><div class="row" style="flex-wrap:nowrap">${k.revoked ? "" : `<button class="sm tech-only" data-act="send" data-id="${esc(k.id)}" title="Send one test request with this key">Test</button><button class="sm tech-only" data-act="burst" data-id="${esc(k.id)}" title="Send limit + 2 requests at once">Burst</button><button class="sm ghost danger" data-act="revoke" data-id="${esc(k.id)}">Revoke</button>`}</div></td></tr>`).join("")}
     </tbody></table></div>
     <div id="sendLog" class="small" style="margin-top:10px;max-height:240px;overflow-y:auto"></div>
   </div>
   <div class="grid two" style="margin-top:16px">
-    <div class="card"><div class="card-head"><div><h2>Create a key</h2><p>Groups are matched by document and collection access lists (<code>group:&lt;name&gt;</code>).</p></div></div>
+    <div class="card"><div class="card-head"><div><h2>Create a key</h2><p>Give it the groups whose documents it may read.<span class="tech-only"> Groups are matched by document and collection access lists (<code>group:&lt;name&gt;</code>).</span></p></div></div>
       <form id="keyForm" class="stack">
         <div class="grid two"><label class="field">Label<input type="text" id="keyLabel" placeholder="hr-assistant" required maxlength="60"/></label>
         <label class="field">Groups<input type="text" id="keyGroups" placeholder="hr finance"/></label></div>
@@ -624,14 +439,14 @@ async function users(view, S) {
         <div id="newKey"></div>
       </form>
     </div>
-    <div class="card"><div class="card-head"><div><h2>Single sign-on</h2><p>OIDC tokens are verified against the IdP's JWKS (RS256/ES256); the groups claim maps to roles.</p></div><a class="btn sm" href="#/policies">Edit mapping</a></div>
-      <div class="table-wrap"><table><thead><tr><th>IdP group</th><th>Roles</th></tr></thead><tbody>
-        ${Object.keys(roles).length ? Object.entries(roles).map(([g, r]) => `<tr><td><code>${esc(g)}</code></td><td>${r.map((x) => `<span class="pill info">${esc(x)}</span>`).join(" ")}</td></tr>`).join("") : `<tr><td colspan="2" class="muted">No group mapping configured.</td></tr>`}
+    <div class="card"><div class="card-head"><div><h2>Single sign-on</h2><p>Employees sign in with their work account. Their sign-in group decides what they can do.<span class="tech-only"> OIDC tokens are verified against the IdP's JWKS (RS256/ES256); the groups claim maps to roles.</span></p></div><a class="btn sm" href="#/policies">Edit</a></div>
+      <div class="table-wrap"><table><thead><tr><th>Sign-in group</th><th>Can do</th></tr></thead><tbody>
+        ${Object.keys(roles).length ? Object.entries(roles).map(([g, r]) => `<tr><td><code>${esc(g)}</code></td><td>${r.map((x) => `<span class="pill info" title="${esc(x)}">${esc(roleLabel(x))}</span>`).join(" ")}</td></tr>`).join("") : `<tr><td colspan="2" class="muted">No group mapping configured.</td></tr>`}
       </tbody></table></div>
-      ${A.mode === "demo" ? `<p class="muted small" style="margin-top:8px">Demo personas Priya, Dana and Audrey are SSO users built from token claims by <code>identity.principal_for_claims()</code>; the JWT signature check runs only on the server. ${sim("simulated IdP")}</p>` : ""}
-      <h3 style="margin:14px 0 8px">SSO users seen</h3>
-      ${Array.isArray(tokenUsers) && tokenUsers.length ? `<div class="table-wrap"><table><thead><tr><th>User</th><th class="num">Requests</th><th class="num">Tokens</th><th>Last seen</th></tr></thead><tbody>
-        ${tokenUsers.map((u) => `<tr><td><code>${esc(u.label)}</code></td><td class="num">${fmt(u.requests_total)}</td><td class="num">${fmt(u.tokens_total)}</td><td class="small">${time(u.last_seen)}</td></tr>`).join("")}</tbody></table></div>` : empty("No token users yet.")}
+      ${A.mode === "demo" ? `<p class="muted small tech-only" style="margin-top:8px">Demo personas Priya, Dana and Audrey are SSO users built from token claims by <code>identity.principal_for_claims()</code>; the JWT signature check runs only on the server. ${sim("simulated IdP")}</p>` : ""}
+      <h3 style="margin:14px 0 8px">People who used it</h3>
+      ${Array.isArray(tokenUsers) && tokenUsers.length ? `<div class="table-wrap"><table><thead><tr><th>Person</th><th class="num">Requests</th><th class="num">Tokens</th><th>Last seen</th></tr></thead><tbody>
+        ${tokenUsers.map((u) => `<tr><td>${esc(personName(u.label))}<div class="muted tiny tech-only mono">${esc(u.label)}</div></td><td class="num">${fmt(u.requests_total)}</td><td class="num">${fmt(u.tokens_total)}</td><td class="small">${time(u.last_seen)}</td></tr>`).join("")}</tbody></table></div>` : empty("No token users yet.")}
     </div>
   </div>`;
 
@@ -670,6 +485,22 @@ async function users(view, S) {
   };
 }
 
+const ROLE_LABELS = { user: "Ask questions", admin: "Administer the platform" };
+function roleLabel(role) {
+  if (ROLE_LABELS[role]) return ROLE_LABELS[role];
+  if (role.startsWith("reader:")) return `Read ${collectionLabel(role.slice(7))} only`;
+  return role;
+}
+const PEOPLE_NAMES = { priya: "Priya Shah", dana: "Dana Ortiz", marcus: "Marcus Bell", audrey: "Audrey Kim", "lobby-kiosk": "Branch lobby kiosk", "bootstrap admin": "Platform admin" };
+const personName = (label) => PEOPLE_NAMES[label] || PEOPLE_NAMES[String(label).split(":").pop()] || label;
+const EVENT_LABELS = {
+  document_question: "Question answered", document_question_denied: "Question denied", admin_bootstrap: "Workspace created",
+  key_created: "Key created", key_revoked: "Key revoked", document_added: "Document added", document_removed: "Document removed",
+  document_acl_changed: "Document access changed", collection_acl_changed: "Collection access changed", policy_changed: "Policy changed",
+  models_verified: "Models verified", model_lock_changed: "Model pins changed", chat_completion: "Chat request",
+};
+const eventLabel = (e) => EVENT_LABELS[e] || e.replace(/_/g, " ");
+
 // =============================================================================================
 // Audit
 // =============================================================================================
@@ -698,18 +529,18 @@ function auditTimeline(e, titlesMap) {
 
 async function auditScreen(view, S) {
   const A = S.A, f = S.auditFilter;
-  view.innerHTML = head("Audit", "Admin actions, access changes and every document question, in a SHA-256 hash-chained JSONL log. Each entry records the access decision and which documents the answer cited.", `<button class="primary" id="verifyBtn">Verify chain</button>`) + `<div id="au">${loading()}</div>`;
+  view.innerHTML = head("Audit log", "Every question, access decision and admin change, in a log that shows if anyone edits it. Open an entry to see who asked, what they were allowed to see, and which documents the answer cited.<span class=\"tech-only\"> SHA-256 hash-chained JSONL.</span>", `<button class="primary" id="verifyBtn">Verify the log</button>`) + `<div id="au">${loading()}</div>`;
   const [data, tmap] = await Promise.all([A.auditEntries(500), titles(S, true)]);
   const box = $("#au", view);
   if (isError(data)) { box.innerHTML = errorBox(data, signInHint(S)); return; }
   const entries = data.entries;
   const types = [...new Set(entries.map((e) => e.event))].sort();
   const verifyBanner = (v) => v.ok
-    ? `<div class="banner ok" id="verifyOut"><strong>Chain intact.</strong> ${fmt(v.entries)} entries verified from the genesis hash.</div>`
+    ? `<div class="banner ok" id="verifyOut"><strong>Log intact.</strong> All ${fmt(v.entries)} entries verified; nothing has been edited or removed.</div>`
     : `<div class="banner bad" id="verifyOut"><strong>Tampering detected at line ${v.bad_line}.</strong> Entries from line ${v.bad_line} on can't be trusted; restore from the WORM archive (<a href="${REPO}docs/adr/0003-audit-log-hash-chain-vs-worm.md">ADR 0003</a>).</div>`;
   box.innerHTML = `
   <div id="verifyBox">${verifyBanner(data.verify)}</div>
-  ${A.caps.tamper ? `<div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Play the attacker ${sim("demo only")}</h2><p>Edits the audit file in this tab the way someone with disk access would, then you verify.</p></div></div>
+  ${A.caps.tamper ? `<div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Test tamper detection ${sim("demo only")}</h2><p>Edit the log in this tab the way an insider with disk access might, then verify it.</p></div></div>
     <div class="toolbar">
       <label class="field">Line<select id="tamperLine">${entries.slice().reverse().map((e) => `<option value="${e.line}">${e.line} · ${esc(e.event)}</option>`).join("")}</select></label>
       <label class="field">Attack<select id="tamperMode"><option value="edit">Edit the payload</option><option value="edit_rehash">Edit and recompute its hash</option><option value="delete">Delete the line</option></select></label>
@@ -718,11 +549,11 @@ async function auditScreen(view, S) {
     <p class="muted small" style="margin-top:8px">Rewriting the <em>newest</em> line and its hash can't be detected from the file alone; that is why archives go to WORM storage.</p></div>` : `<p class="muted small" style="margin-top:8px">Live mode never modifies the audit log. Tamper testing is available in the browser demo.</p>`}
   <div class="card" style="margin-top:16px">
     <div class="toolbar" style="margin-bottom:12px">
-      <label class="field">Event<select id="fEvent"><option value="">All events</option>${types.map((t) => `<option ${t === f.event ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      <label class="field">Event<select id="fEvent"><option value="">All events</option>${types.map((t) => `<option value="${esc(t)}" ${t === f.event ? "selected" : ""}>${esc(eventLabel(t))}</option>`).join("")}</select></label>
       <label class="field">Decision<select id="fDecision"><option value="">Any</option><option ${f.decision === "allow" ? "selected" : ""}>allow</option><option ${f.decision === "deny" ? "selected" : ""}>deny</option></select></label>
       <label class="field" style="flex:1 1 200px">Search<input type="text" id="fSearch" value="${esc(f.q)}" placeholder="caller, document, basis…"/></label>
     </div>
-    <div class="table-wrap"><table id="auditTable"><thead><tr><th class="num">Line</th><th>Time</th><th>Event</th><th>Caller / by</th><th>Decision</th><th>Cited documents</th></tr></thead><tbody id="auditBody"></tbody></table></div>
+    <div class="table-wrap"><table id="auditTable"><thead><tr><th class="num">#</th><th>Time</th><th>Event</th><th>Who</th><th>Access</th><th>Documents cited</th></tr></thead><tbody id="auditBody"></tbody></table></div>
     <p class="muted small" id="auditCount" style="margin-top:8px"></p>
   </div>`;
 
@@ -738,19 +569,22 @@ async function auditScreen(view, S) {
       }
       return true;
     });
-    $("#auditBody", view).innerHTML = rows.map((e) => {
+    const shown = rows.slice(0, f.limit || 25);
+    $("#auditBody", view).innerHTML = shown.map((e) => {
       const s = e.summary;
-      return `<tr class="clickable" data-line="${e.line}" tabindex="0"><td class="num">${e.line}</td><td class="small nowrap">${time(e.ts)}</td><td><code>${esc(e.event)}</code></td><td class="small">${esc(s.actor)}</td>
-        <td>${s.decision ? `<span class="pill ${s.decision === "allow" ? "ok" : "bad"}">${esc(s.decision)}</span> <span class="muted tiny">access=${esc(s.basis)}</span>` : ""}</td>
-        <td class="small">${s.cited.map((id) => esc(tmap.get(id) || id)).join(", ")}${s.flags.length ? ` <span class="pill bad">injection flag</span>` : ""}</td></tr>`;
+      return `<tr class="clickable" data-line="${e.line}" tabindex="0"><td class="num">${e.line}</td><td class="small nowrap">${time(e.ts)}</td><td>${esc(eventLabel(e.event))}<div class="tech-only"><code>${esc(e.event)}</code></div></td><td class="small">${esc(personName(s.actor))}</td>
+        <td>${s.decision ? `<span class="pill ${s.decision === "allow" ? "ok" : "bad"}">${s.decision === "allow" ? "allowed" : "denied"}</span> <span class="muted tiny tech-only">access=${esc(s.basis)}</span>` : ""}</td>
+        <td class="small">${s.cited.map((id) => esc(docTitle(tmap.get(id) || id))).join(", ")}${s.flags.length ? ` <span class="pill bad">injection flag</span>` : ""}</td></tr>`;
     }).join("") || `<tr><td colspan="6">${empty("No entries match.")}</td></tr>`;
-    $("#auditCount", view).textContent = `${rows.length} of ${entries.length} entries (newest first)`;
+    $("#auditCount", view).innerHTML = `${shown.length} of ${rows.length}${rows.length !== entries.length ? ` matching (${entries.length} in all)` : ""} entries, newest first${rows.length > shown.length ? ' <button type="button" class="sm" id="auditMore">Show 25 more</button>' : ""}`;
+    const more = $("#auditMore", view);
+    if (more) more.onclick = () => { f.limit = (f.limit || 25) + 25; renderRows(); };
   };
   const openRow = (line) => {
     const e = entries.find((x) => x.line === line);
     if (e) openDrawer(`Audit line ${line}`, auditTimeline(e, tmap));
   };
-  $("#fEvent", view).onchange = (e) => { f.event = e.target.value; renderRows(); };
+  $("#fEvent", view).onchange = (e) => { f.event = e.target.value; f.limit = 25; renderRows(); };
   $("#fDecision", view).onchange = (e) => { f.decision = e.target.value; renderRows(); };
   $("#fSearch", view).oninput = (e) => { f.q = e.target.value; renderRows(); };
   $("#auditBody", view).onclick = (e) => { const tr = e.target.closest("tr[data-line]"); if (tr) openRow(Number(tr.dataset.line)); };
@@ -781,7 +615,7 @@ const STATUS_CLS = { verified: "ok", mismatch: "bad", missing: "bad", error: "ba
 
 async function modelsScreen(view, S) {
   const A = S.A;
-  view.innerHTML = head("Models", "Backends, what they serve, and the model supply chain: pinned digests in a lock file, verification against what is actually served, an off / warn / enforce policy, and a CycloneDX ML-BOM.") + `<div id="mo">${loading()}</div>`;
+  view.innerHTML = head("Models", "Which AI models the assistant runs on the credit union's own server, and proof that each is the exact version that was approved.<span class=\"tech-only\"> Pinned digests in a lock file, verification against what is actually served, an off / warn / enforce policy, and a CycloneDX ML-BOM.</span>") + `<div id="mo">${loading()}</div>`;
   const [m, bom] = await Promise.all([A.models(), A.mlbom()]);
   const box = $("#mo", view);
   if (isError(m)) { box.innerHTML = errorBox(m, signInHint(S)); return; }
@@ -792,18 +626,18 @@ async function modelsScreen(view, S) {
     <div class="card kpi"><div class="label">Backend</div><div class="value" style="font-size:22px">${esc(m.backend.name)}</div><div class="sub">${m.backend.healthy ? '<span class="pill ok">healthy</span>' : '<span class="pill bad">unreachable</span>'} ${A.mode === "demo" ? sim() : ""}</div></div>
     <div class="card kpi"><div class="label">${A.mode === "demo" ? "Chat / embedding model" : "Served models"}</div><div class="value" style="font-size:16px;margin-top:10px">${A.mode === "demo" ? `<code>${esc(m.backend.chat_model)}</code><br><code>${esc(m.backend.embed_model)}</code>` : (m.served || []).map((x) => `<code>${esc(x)}</code>`).join("<br>") || esc(m.served_error || "none")}</div></div>
     <div class="card kpi"><div class="label">Supply-chain status</div><div class="value ${v.ok && models.some((x) => x.pinned) ? "ok" : v.ok ? "" : "bad"}" id="scStatus">${v.error ? "Unavailable" : v.ok ? (models.some((x) => x.pinned) ? "Verified" : "No pins") : "Problems"}</div><div class="sub">${esc(v.error || `${models.filter((x) => x.status === "verified").length} verified · ${models.filter((x) => x.status === "unpinned").length} unpinned · ${models.filter((x) => ["mismatch", "missing"].includes(x.status)).length} mismatched/missing`)}</div></div>
-    <div class="card kpi"><div class="label">Model policy</div><div class="seg" id="policySeg" style="margin-top:10px">${["off", "warn", "enforce"].map((p) => `<button data-pol="${p}" aria-pressed="${p === m.policy}">${p}</button>`).join("")}</div><div class="sub" style="margin-top:8px">enforce: only pinned, verified models are served (403)</div></div>
+    <div class="card kpi"><div class="label">Model policy</div><div class="seg" id="policySeg" style="margin-top:10px">${["off", "warn", "enforce"].map((p) => `<button data-pol="${p}" aria-pressed="${p === m.policy}">${p}</button>`).join("")}</div><div class="sub" style="margin-top:8px">enforce: only approved, verified models are used</div></div>
   </div>
   <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Verification ${A.mode === "demo" ? sim("simulated Ollama inventory") : ""}</h2><p>${A.mode === "demo" ? "A stand-in Ollama model list with made-up digests (SHA-256 of a fixed string, not real model digests). Pinning, verification and the policy decision run <code>gateway/supply_chain.py</code>." : `Last checked ${v.checked_at ? time(v.checked_at * 1000) : "never"}${v.lock_file ? ` against <code>${esc(v.lock_file)}</code>` : " (no lock file configured: set GATEWAY_MODEL_LOCK_FILE)"}.`}</p></div>
     <div class="row"><button class="primary" id="verifyModels">Verify now</button>${A.caps.simulatedModels ? `<button id="pinBtn">Pin served models (trust on first use)</button><button class="danger" id="repullBtn">Simulate re-pull of llama3.1:8b</button>` : ""}</div></div>
-    ${models.length ? `<div class="table-wrap"><table id="modelTable"><thead><tr><th>Model</th><th>Status</th><th>Pinned digest</th><th>Served digest</th><th>Details</th></tr></thead><tbody>
+    ${models.length ? `<div class="table-wrap"><table id="modelTable"><thead><tr><th>Model</th><th>Status</th><th class="tech-only">Pinned digest</th><th class="tech-only">Served digest</th><th class="hide-sm">Details</th></tr></thead><tbody>
       ${models.map((x) => `<tr data-model="${esc(x.name)}"><td><b>${esc(x.name)}</b><div class="muted tiny">${esc(x.backend)}</div></td><td><span class="pill ${STATUS_CLS[x.status] || ""}">${esc(x.status)}</span><div class="muted tiny">${esc(x.detail)}</div></td>
-        <td class="mono tiny">${x.expected ? esc(x.expected.slice(0, 16)) + "…" : "–"}</td><td class="mono tiny">${x.actual ? esc(x.actual.slice(0, 16)) + "…" : "–"}</td>
-        <td class="small">${Object.entries(x.info || {}).map(([k, val]) => `${esc(k)}: ${esc(val)}`).join(" · ")}</td></tr>`).join("")}
+        <td class="mono tiny tech-only">${x.expected ? esc(x.expected.slice(0, 16)) + "…" : "–"}</td><td class="mono tiny tech-only">${x.actual ? esc(x.actual.slice(0, 16)) + "…" : "–"}</td>
+        <td class="small hide-sm">${Object.entries(x.info || {}).map(([k, val]) => `${esc(k)}: ${esc(val)}`).join(" · ")}</td></tr>`).join("")}
     </tbody></table></div>` : v.error ? errorBox({ detail: v.error }) : empty("Nothing served or pinned.")}
     ${A.caps.simulatedModels ? `<div class="row" style="margin-top:12px"><button id="tryModel">Try a request to llama3.1:8b</button><span id="tryOut" class="small"></span></div>` : ""}
   </div>
-  <div class="grid two" style="margin-top:16px">
+  <div class="grid two tech-only" style="margin-top:16px">
     <div class="card"><div class="card-head"><div><h2>Lock file</h2><p>${A.caps.editLock ? "Edit and save; validated by <code>supply_chain.parse_lock</code>." : "Paste a lock document to validate it with the loader the gateway uses at startup. Nothing is written: deploy the file and set GATEWAY_MODEL_LOCK_FILE."}</p></div></div>
       <textarea class="code" id="lockText" spellcheck="false" aria-label="Model lock file" placeholder='{"version": 1, "models": [...]}  (empty: no lock file; use "Pin served models")'>${esc(m.lock_text || "")}</textarea>
       <div class="row" style="margin-top:8px"><button id="lockValidate">Validate</button>${A.caps.editLock ? '<button class="primary" id="lockSave">Save and verify</button>' : ""}<span id="lockOut" class="small"></span></div>
@@ -876,22 +710,32 @@ const pretty = (obj) => JSON.stringify(obj, null, 2).replace(/\[\s+([^\[\]{}]*?)
 
 async function policies(view, S) {
   const A = S.A, P = S.policyState;
-  view.innerHTML = head("Policies", "The runtime-editable gateway policy: IdP group to role mapping, default collection access, retrieval, rate limit and model policy. Validated with the gateway's own setting types and <code>identity.check_role</code>, applied in memory and audited as <code>policy_changed</code>.") + `<div id="po">${loading()}</div>`;
+  view.innerHTML = head("Access policy", "Who can use the assistant and what they can read when no document says otherwise, plus rate limits and which models are allowed. Every change is checked before it's applied, and logged.<span class=\"tech-only\"> Validated with the gateway's own setting types and <code>identity.check_role</code>, applied in memory and audited as <code>policy_changed</code>.</span>") + `<div id="po">${loading()}</div>`;
   const pol = await A.policy();
   const box = $("#po", view);
   if (isError(pol)) { box.innerHTML = errorBox(pol, signInHint(S)); return; }
   if (P.text == null) P.text = pretty(pol.policy);
   const list = scenarios(S);
   if (!list.some((x) => x.id === P.scenario)) P.scenario = list[0].id;
+  const cur = pol.policy || {};
   box.innerHTML = `
-  <div class="grid split">
-    <div class="card"><div class="card-head"><div><h2>Policy document</h2><p>JSON, the format the gateway reads from its environment (<code>.env</code>). ${A.mode === "live" ? "Applied in memory on the server; a restart restores the environment values." : "Applied to this tab's gateway modules."}</p></div>
+  <div class="card policy-summary"><div class="card-head"><div><h2>In effect now</h2></div></div>
+    <dl class="facts">
+      <div><dt>Sign-in groups</dt><dd>${Object.entries(cur.GATEWAY_OIDC_GROUP_ROLES || {}).map(([g, r]) => `<div><code>${esc(g)}</code>: ${r.map((x) => esc(roleLabel(x))).join(", ")}</div>`).join("") || "none"}</dd></div>
+      <div><dt>Collections with no access list</dt><dd>${cur.GATEWAY_COLLECTION_DEFAULT_ACCESS === "open" ? "Open to everyone who can ask questions" : "Closed until someone is granted access"}</dd></div>
+      <div><dt>Requests per person or app</dt><dd>${fmt(cur.GATEWAY_RATE_LIMIT_PER_MIN)} a minute</dd></div>
+      <div><dt>Models</dt><dd>${{ off: "Any model the server offers", warn: "Unapproved models allowed, but flagged", enforce: "Only approved, verified models" }[cur.GATEWAY_MODEL_POLICY] || esc(cur.GATEWAY_MODEL_POLICY)}</dd></div>
+      <div><dt>Search</dt><dd>${esc({ hybrid: "Keyword and meaning combined", bm25: "Keyword", vector: "Meaning" }[cur.GATEWAY_RETRIEVAL_MODE] || cur.GATEWAY_RETRIEVAL_MODE)}${cur.GATEWAY_RERANKER && cur.GATEWAY_RERANKER !== "none" ? ", re-ranked" : ""}</dd></div>
+    </dl>
+  </div>
+  <div class="grid split" style="margin-top:16px">
+    <div class="card"><div class="card-head"><div><h2>Edit the policy</h2><p>The same settings as JSON${A.mode === "live" ? ". Applied in memory on the server; a restart restores the configured values." : ", applied to this demo workspace."}<span class="tech-only"> The format the gateway reads from its environment (<code>.env</code>).</span></p></div>
       <div class="row"><button id="polRevert">Revert to current</button><button id="polValidate">Validate</button><button class="primary" id="polApply">Apply</button></div></div>
       <textarea class="code tall" id="polText" spellcheck="false" aria-label="Policy JSON" aria-describedby="polErrors">${esc(P.text)}</textarea>
       <div id="polErrors" aria-live="polite">${P.message || ""}</div>
       <details style="margin-top:10px"><summary class="small">Fields</summary><dl class="kv small" style="margin-top:8px">${Object.entries(pol.fields).map(([k, d]) => `<dt><code>${esc(k)}</code></dt><dd>${esc(d)}</dd>`).join("")}</dl></details>
     </div>
-    <div class="card"><div class="card-head"><div><h2>Scenario</h2><p>Run it, change the policy, apply: it re-runs and shows before and after.</p></div></div>
+    <div class="card"><div class="card-head"><div><h2>Try a change</h2><p>Run a scenario, change the policy and apply: it runs again and shows before and after.</p></div></div>
       <div class="stack">
         <label class="field">Scenario<select id="scSel">${list.map((x) => `<option value="${x.id}" ${x.id === P.scenario ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
         <p class="muted small" id="scHint">${esc(list.find((x) => x.id === P.scenario).hint)}</p>
@@ -914,6 +758,7 @@ async function policies(view, S) {
   const runScenario = async () => {
     const sc = list.find((x) => x.id === P.scenario);
     const res = sc.kind === "model" ? await A.chat(sc.persona, sc.q) : await A.ask(sc.persona, "policies", sc.q, {});
+    if (res.sources) res.sources = res.sources.map((x) => ({ ...x, title: docTitle(x.title) }));
     const cur = await A.policy();
     const p = cur.policy || {};
     return { res, policyNote: `${personaName(S, sc.persona)} · default access ${p.GATEWAY_COLLECTION_DEFAULT_ACCESS} · retrieval ${p.GATEWAY_RETRIEVAL_MODE}/${p.GATEWAY_RERANKER}` };
@@ -950,7 +795,7 @@ const METRICS = [["recall@1", "recall@1"], ["recall@4", "recall@4"], ["mrr", "MR
 
 async function evals(view, S) {
   const A = S.A;
-  view.innerHTML = head("Evals", "Retrieval quality gate from <code>scripts/rag_eval.py</code> over the bundled golden set, the same numbers CI enforces against <code>evals/thresholds.json</code>.",
+  view.innerHTML = head("Answer quality", "How often the assistant finds the right document and cites only it, measured on a fixed test set and checked on every change before it ships.<span class=\"tech-only\"> Retrieval quality gate from <code>scripts/rag_eval.py</code> over the bundled golden set, the same numbers CI enforces against <code>evals/thresholds.json</code>.</span>",
     A.caps.runEval ? `<button class="primary" id="runEval">Re-run in your browser</button>` : "") + `<div id="ev">${loading()}</div>`;
   let data;
   try { data = await A.evals(); } catch (e) { $("#ev", view).innerHTML = errorBox({ detail: String(e.message || e) }); return; }
@@ -961,14 +806,14 @@ async function evals(view, S) {
   const gatePass = data.problems.length === 0;
   const leaks = configs.reduce((s, k) => s + rep.results[k].acl_leaks, 0);
   $("#ev", view).innerHTML = `
-  <div class="banner info"><strong>Measured, not simulated:</strong> ${rep.questions} questions over ${rep.documents} fictional documents (${rep.restricted_documents} restricted), k=${rep.k}. Embedder: ${esc(rep.embedder)}. Answers: ${esc(rep.answerer)}. So these numbers measure the retrieval and citation pipeline with that embedder, not answer quality with a real LLM. Produced by <code>${esc(data.generated_by)}</code>.</div>
+  <div class="banner info"><strong>Measured, not simulated.</strong> ${rep.questions} test questions over a separate benchmark library of ${rep.documents} documents (${rep.restricted_documents} restricted), kept apart from the Cypress Harbor library so the test can't be tuned to it. It measures finding and citing the right document; it isn't a test of a large language model's writing.<span class="tech-only"> k=${rep.k}. Embedder: ${esc(rep.embedder)}. Answers: ${esc(rep.answerer)}. Produced by <code>${esc(data.generated_by)}</code>.</span></div>
   <div class="grid kpis four" style="margin-top:16px">
-    <div class="card kpi"><div class="label">CI gate</div><div class="value ${gatePass ? "ok" : "bad"}" id="gate">${gatePass ? "Pass" : "Fail"}</div><div class="sub">${gatePass ? "every gated metric meets its threshold" : esc(data.problems.join("; "))}</div></div>
-    <div class="card kpi"><div class="label">ACL leaks</div><div class="value ${leaks ? "bad" : "ok"}">${leaks}</div><div class="sub">restricted passages retrieved for an outsider, all configs (must be 0)</div></div>
-    <div class="card kpi"><div class="label">recall@1 · ${esc(S.evalConfig)}</div><div class="value">${pct(r["recall@1"])}</div><div class="sub">MRR ${r.mrr.toFixed(3)} · recall@${rep.k} ${pct(r[`recall@${rep.k}`])}</div></div>
-    <div class="card kpi"><div class="label">Citation accuracy</div><div class="value">${pct(r.citation_accuracy)}</div><div class="sub">answers citing only the expected document</div></div>
+    <div class="card kpi"><div class="label">Release check</div><div class="value ${gatePass ? "ok" : "bad"}" id="gate">${gatePass ? "Pass" : "Fail"}</div><div class="sub">${gatePass ? "every gated metric meets its threshold" : esc(data.problems.join("; "))}</div></div>
+    <div class="card kpi"><div class="label">ACL leaks</div><div class="value ${leaks ? "bad" : "ok"}">${leaks}</div><div class="sub">times a restricted document reached someone not cleared for it (must be 0)</div></div>
+    <div class="card kpi"><div class="label">Right document ranked first</div><div class="value">${pct(r["recall@1"])}</div><div class="sub">in the top ${rep.k}: ${pct(r[`recall@${rep.k}`])}<span class="tech-only"> · recall@1 · MRR ${r.mrr.toFixed(3)} · ${esc(S.evalConfig)}</span></div></div>
+    <div class="card kpi"><div class="label">Cites only the right document</div><div class="value">${pct(r.citation_accuracy)}</div><div class="sub">answer has the key fact: ${pct(r.answer_contains)}</div></div>
   </div>
-  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>By configuration</h2><p>Retrieval mode + reranker</p></div></div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>By search method</h2><p>Keyword (bm25), meaning (vector), both combined (hybrid), and with re-ranking</p></div></div>
     <div id="evalChart"></div>
     <div class="table-wrap" style="margin-top:12px"><table id="scorecard"><thead><tr><th>Configuration</th>${METRICS.map(([, l]) => `<th class="num">${esc(l)}</th>`).join("")}<th class="num">ACL leaks</th></tr></thead><tbody>
       ${configs.map((k) => `<tr class="clickable ${k === S.evalConfig ? "selected" : ""}" data-config="${esc(k)}" tabindex="0"><td><code>${esc(k)}</code></td>${METRICS.map(([m]) => {
@@ -977,7 +822,7 @@ async function evals(view, S) {
       }).join("")}<td class="num">${rep.results[k].acl_leaks}</td></tr>`).join("")}
     </tbody></table></div>
   </div>
-  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Misses · ${esc(S.evalConfig)}</h2><p>Questions not answered perfectly (rank 1, cited only the right document, phrase present). Click a configuration above to switch.</p></div></div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Questions not answered perfectly · ${esc(S.evalConfig)}</h2><p>Right document first, cited alone, and the key fact present. Click a search method above to switch.</p></div></div>
     ${r.failures.length ? `<div class="table-wrap"><table><thead><tr><th>ID</th><th>Question</th><th>Expected</th><th class="num">Rank</th><th>Cited</th><th>Phrase</th></tr></thead><tbody>
       ${r.failures.map((f) => { const q = data.questions[f.id] || {}; return `<tr><td class="mono small">${esc(f.id)}</td><td>${esc(q.question)}</td><td class="small">${esc(q.doc)}</td><td class="num">${f.rank || "–"}</td><td class="small">${esc(f.cited.join(", ") || "none")}</td><td>${f.contains ? '<span class="pill ok">yes</span>' : '<span class="pill bad">no</span>'}</td></tr>`; }).join("")}
     </tbody></table></div>` : empty("No misses.")}
@@ -1018,7 +863,7 @@ async function settingsScreen(view, S) {
     <div class="card"><div class="card-head"><h2>Mode</h2></div>
       <dl class="kv"><dt>Mode</dt><dd><span class="badge ${A.mode}"><span class="dot"></span>${esc(info.label)}</span></dd>
       <dt>Version</dt><dd>${esc(info.version)}</dd><dt>Backend</dt><dd><code>${esc(info.backend)}</code></dd>
-      ${info.python ? `<dt>Runtime</dt><dd>Python ${esc(info.python)} in WebAssembly (Pyodide 0.26.4) · stand-ins for ${esc(info.stubbed.join(", "))}</dd>` : ""}</dl>
+      ${info.python ? `<dt class="tech-only">Runtime</dt><dd class="tech-only">Python ${esc(info.python)} in WebAssembly (Pyodide 0.26.4) · stand-ins for ${esc(info.stubbed.join(", "))}</dd>` : ""}</dl>
       <p class="muted small" style="margin-top:10px">${A.mode === "demo"
         ? "Live mode: run <code>docker compose up</code> and open <code>http://localhost:8080/console/</code>; the same console then talks to the gateway's HTTP API."
         : `Demo mode runs from static hosting (GitHub Pages) with the gateway's Python modules in the browser.`}
@@ -1033,8 +878,8 @@ async function settingsScreen(view, S) {
       </form></div>`
     : `<div class="card"><div class="card-head"><div><h2>Demo session</h2><p>Keys, documents, the audit log and policy changes live in this tab only.</p></div></div>
       <div class="row"><button class="danger" id="resetBtn">Reset demo data</button><button id="tourAgain">Restart the guided tour</button></div>
-      <h3 style="margin:14px 0 8px">Modules running in this tab</h3>
-      <div class="modules">${info.modules.map((m) => `<a class="module" href="${REPO}${esc(m.path)}" title="sha256 ${esc(m.sha)}…, fetched from this site">${esc(m.path)} <small>${m.lines} lines · ${esc(m.sha)}</small></a>`).join("")}</div></div>`}
+      <h3 class="tech-only" style="margin:14px 0 8px">Modules running in this tab</h3>
+      <div class="modules tech-only">${info.modules.map((m) => `<a class="module" href="${REPO}${esc(m.path)}" title="sha256 ${esc(m.sha)}…, fetched from this site">${esc(m.path)} <small>${m.lines} lines · ${esc(m.sha)}</small></a>`).join("")}</div></div>`}
   </div>
   <div class="card" style="margin-top:16px"><div class="card-head"><h2>What is simulated</h2></div>
     <ul class="small" style="margin:0;padding-left:18px">
@@ -1065,8 +910,8 @@ async function settingsScreen(view, S) {
 }
 
 export const SCREENS = [
+  { id: "chat", title: "Ask", render: chat, icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' },
   { id: "overview", title: "Overview", render: overview, icon: '<path d="M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z"/>' },
-  { id: "chat", title: "Chat", render: chat, icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' },
   { id: "documents", title: "Documents", render: documents, icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>' },
   { id: "users", title: "Users & Keys", render: users, icon: '<circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 12 0v1M16 11l2 2 4-4"/>' },
   { id: "audit", title: "Audit", render: auditScreen, icon: '<path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>' },
