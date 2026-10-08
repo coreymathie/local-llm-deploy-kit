@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## Unreleased
 
 The console is set in a business. 223 tests, RAG evals unchanged (no ACL leaks), and a 38-check browser smoke
 test across both console modes.
