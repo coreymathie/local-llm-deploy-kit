@@ -1,5 +1,9 @@
 # Architecture decision records
 
+Each record states one platform decision, the context that forced it, the consequences accepted (positive and
+negative), and the alternatives rejected. Records are not rewritten when a later decision extends them; the later
+record references the earlier one.
+
 | ADR | Decision | Status |
 |---|---|---|
 | [0001](0001-inference-backend.md) | Ollama is the default backend; any OpenAI-compatible server (vLLM, SGLang, TGI, NIM) is pluggable | Accepted (0.5.0) |
@@ -11,4 +15,5 @@
 | [0007](0007-envelope-encryption-at-rest.md) | Envelope encryption (AES-256-GCM, per-document data keys, pluggable KEK provider) for passages, vectors and audit text; keys never in backups | Accepted (0.6.0) |
 | [0008](0008-model-pinning-and-ml-bom.md) | Pinned model digests verified against what the backend serves, an off/warn/enforce policy, and a CycloneDX 1.6 ML-BOM | Accepted (0.6.0) |
 
-Format: context, decision, consequences, alternatives, and where the decision lives in code and tests.
+Format: **Status**, **Context**, **Decision** (ending with the code and tests that implement it),
+**Consequences** (positive and negative), **Alternatives considered**.

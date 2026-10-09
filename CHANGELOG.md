@@ -2,71 +2,85 @@
 
 ## Unreleased
 
-The console is set in a business and opens on an employee assistant, the way an internal Copilot-style tool
-does, with a 57-document library behind it. 230 tests, RAG evals with no ACL leaks (hybrid citation accuracy
-0.837 → 0.884), and a 41-check browser smoke test across both console modes.
+This release reframes the console around the institution that would deploy the platform. The console is set in
+a fictional credit union and opens on an employee assistant, in the pattern of an internal Copilot-style tool,
+with a 57-document library behind it. Evidence: 230 tests, RAG evals with no ACL leaks (hybrid citation
+accuracy 0.837 → 0.884), and a 41-check browser smoke test across both console modes.
 
-### Harbor Assistant
-- **Ask** is the landing screen: streamed answers with numbered citations and source cards; a citation opens
-  the document with the quoted passage highlighted, its owner, version, review date and who may read it.
+### Highlights
+- **Harbor Assistant is the landing screen.** Staff ask questions across every collection they may read; the
+  access decision runs per collection before any passage is scored, and every answer cites the passages it used.
+- **A sample institution to assess the platform against.** Cypress Harbor Credit Union (fictional: 340
+  employees, 10 departments, 11 branches) with a 57-document library in five collections and 90 days of
+  **sample** usage, so adoption, restricted content withheld and cost per answer can be read the way an
+  operator would read them.
+- **Business and technical views.** One switch separates what employees and administrators see from the
+  retrieval scores, keys, digests and ML-BOM an engineer or auditor needs.
+
+### Added
+- **Ask** (`demo/assistant.js`): streamed answers with numbered citations and source cards; a citation opens the
+  document with the quoted passage highlighted, its owner, version, review date and who may read it.
   Conversation history, suggested questions per person, copy, ask again, helpful / not helpful, ask as someone
-  else or compare two people side by side (`demo/assistant.js`).
+  else or compare two people side by side.
 - **All sources I can read** (default) searches every collection the person may read. The access decision runs
   per collection before any passage is scored; passages are then ranked together. In live mode the console asks
   each readable collection in parallel and keeps the strongest answer.
-- Answers quote only sentences from the best-matching document, and a sentence holding a number from the
-  question wins over its neighbours. A question nothing answers well gets "I couldn't find that in the documents
-  you can access" instead of an unrelated quote (vector-similarity floor; console only, not applied to the eval).
-- A document retrieved for a question that contains instruction-like text shows a warning on the answer, cited
-  or not.
-
-### Console: views, navigation, themes
+- A refusal path for unanswerable questions: a question nothing answers well receives "I couldn't find that in
+  the documents you can access" instead of an unrelated quote (vector-similarity floor; console only, not
+  applied to the eval).
+- A warning on the answer when a document retrieved for the question contains instruction-like text, cited or
+  not.
 - **Business and technical views** (header switch or `?view=technical`). The business view uses plain language
-  (access as "Restricted to the hr group", document titles, friendly audit-event names); the technical view adds
+  (access as "Restricted to the hr group", document titles, readable audit-event names); the technical view adds
   retrieval controls and scores, API keys and token limits, raw access-list entries, digests, the lock file,
   ML-BOM and runtime modules.
-- Navigation regrouped as Assistant (Ask), Admin (Usage and impact, Documents, People and keys, Audit log) and
-  Governance (Access policy, Models, Answer quality, Settings). Overview is now **Usage and impact**.
-- Light and dark themes (follow the system; header toggle), a tour invite instead of an automatic tour, a
-  not-found page, and screens that need no engine (Ask, Usage and impact) render before Pyodide finishes.
+- **Usage and impact** for the sample company. Over 7, 30 or 90 days: questions answered, answered from
+  documents with citations, employees using it, hours saved and cost per answer (assumptions shown), restricted
+  content withheld, member data sent outside, answers rated helpful, each against the previous period with trend
+  lines; questions per day; adoption by department; topics; response time; collections and who may read them;
+  governance checks; recent activity.
+- **Document library**: `scripts/sample_library.py` writes 44 more documents across five collections (staff
+  policies, member services, lending, compliance, branch operations) and `demo/data/library.json`, the catalog
+  the console and the usage file read (owners, departments, versions, review dates, access lists). OFAC
+  screening is restricted to `group:compliance`. CI checks the library is current; `tests/test_sample_library.py`
+  checks the catalog, that the usage file's collections match it, and cross-collection answers and access.
+- **Sample usage data**: `scripts/generate_sample_company.py` writes `demo/data/sample_company.json` from a fixed
+  seed and stated assumptions; CI checks it is current, and `tests/test_sample_company.py` checks its arithmetic
+  and that it is labelled fictional.
+- Additional fictional credit-union documents, growing the original demo library from 5 to 13: card disputes, wire
+  verification, consumer lending, member identity verification, complaint handling, branch security, AI
+  acceptable use, and a BSA/AML escalation procedure restricted to `group:compliance`. The existing documents
+  keep their facts.
+- Marcus Bell (BSA officer, groups staff + compliance). New tests check that only the compliance group retrieves
+  the BSA procedure and that the new policies answer with citations.
+- Navigation shell (`demo/shell.js`, shared in design with the portfolio's other consoles): breadcrumbs in the
+  header, a command palette (Ctrl/Cmd+K or `/`) over screens, actions and people to ask as, `g` + letter
+  shortcuts with a `?` sheet, an audit-entry badge, a workspace label for the sample company, and a collapsible
+  sidebar.
+- Light and dark themes (follow the system; header toggle), a tour invite instead of an automatic tour, and a
+  not-found page.
+
+### Changed
+- Navigation is grouped as Assistant (Ask), Admin (Usage and impact, Documents, People and keys, Audit log) and
+  Governance (Access policy, Models, Answer quality, Settings). This replaces an interim grouping by job
+  (Monitor, Use, Govern, Configure) with sub-pages, introduced earlier in this cycle.
+- Overview became **Overview › Business impact**, with the previous Overview as **Overview › This session**; the
+  screen is now **Usage and impact**.
+- Answers quote only sentences from the best-matching document, and a sentence holding a number from the
+  question wins over its neighbours.
 - Documents: titles, owners and review dates, a filter, and a plain-language access matrix. Audit log: paging
   and a "Log intact" summary. Access policy: an "in effect now" summary above the JSON. Answer quality: labelled
   as measured on the benchmark library.
+- Screens that need no engine (Ask, Usage and impact) render before Pyodide finishes.
+- People are named for the setting (Priya Shah, HR; Dana Ortiz, engineering; Audrey Kim, internal audit; branch
+  lobby kiosk).
+- The original documents lose the "(fictional sample)" title suffix; the workspace is labelled instead.
 - The header keeps its controls at full size on narrower desktops; the breadcrumb gives way first.
-- Fixed: feedback buttons toggled twice per click after the chat re-rendered (stacked click listeners), and an
-  answer to a question sent while the chat re-rendered was painted into the old page and never shown.
-
-### Document library
-- `scripts/sample_library.py` writes 44 more documents across five collections (staff policies, member services,
-  lending, compliance, branch operations) and `demo/data/library.json`, the catalog the console and the usage
-  file read (owners, departments, versions, review dates, access lists). OFAC screening is restricted to
-  `group:compliance`. CI checks the library is current; `tests/test_sample_library.py` checks the catalog, that
-  the usage file's collections match it, and cross-collection answers and access.
-- The original documents lose the "(fictional sample)" title suffix: the workspace is labelled instead.
-
-### Console: business impact
-- **Overview › Business impact** for a sample company, Cypress Harbor Credit Union (fictional: 340 employees,
-  10 departments, 11 branches). Over 7, 30 or 90 days: questions answered, answered from documents with
-  citations, employees using it, hours saved and cost per answer (assumptions shown), restricted content
-  withheld, member data sent outside, answers rated helpful, each against the previous period with trend lines;
-  questions per day; adoption by department; topics; response time; collections and who may read them;
-  governance checks; recent activity. The previous Overview is now **Overview › This session**.
-- **Navigation**: screens grouped by job (Monitor, Use, Govern, Configure) with sub-pages, breadcrumbs in the
-  header, a command palette (Ctrl/Cmd+K or `/`) over screens, actions and people to ask as, `g` + letter
-  shortcuts with a `?` sheet, an audit-entry badge, a workspace label for the sample company, and a collapsible
-  sidebar (`demo/shell.js`, shared in design with the portfolio's other consoles).
 - Charts: the y axis of stacked columns sizes itself to its labels; horizontal bars take a label width.
 
-### Demo data: sample company
-- `scripts/generate_sample_company.py` writes `demo/data/sample_company.json` from a fixed seed and stated
-  assumptions; CI checks it's current, and `tests/test_sample_company.py` checks its arithmetic and that it's
-  labelled fictional.
-- The demo library grows from 5 to 13 fictional credit-union documents: card disputes, wire verification,
-  consumer lending, member identity verification, complaint handling, branch security, AI acceptable use, and a
-  BSA/AML escalation procedure restricted to `group:compliance`. The existing documents keep their facts.
-- People are named for the setting (Priya Shah, HR; Dana Ortiz, engineering; Audrey Kim, internal audit;
-  branch lobby kiosk), and Marcus Bell (BSA officer, groups staff + compliance) is added. New tests check that
-  only the compliance group retrieves the BSA procedure and that the new policies answer with citations.
+### Fixed
+- Feedback buttons toggled twice per click after the chat re-rendered (stacked click listeners).
+- An answer to a question sent while the chat re-rendered was painted into the old page and never shown.
 
 ## [0.7.0] — 2026-10
 
