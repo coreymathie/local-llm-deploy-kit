@@ -2,7 +2,7 @@
 
 ## Availability
 
-Spanish-language service is available in every branch during business hours and in the contact center from 8:00 to 19:00, Monday through Saturday. The AI agent answers in Spanish at any hour.
+Spanish-language service is available in every branch during business hours and in the contact center from 8:00 to 19:00, Monday through Saturday. Online banking and the mobile app are also available in Spanish.
 
 ## Documents
 

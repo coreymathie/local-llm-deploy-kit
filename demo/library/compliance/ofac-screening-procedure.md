@@ -8,6 +8,6 @@ Screen every new member, every new signer and every outgoing wire against the OF
 
 Place a hold on a potential match and send it to the BSA officer within 1 hour. Do not tell the member why the transaction is on hold.
 
-## Confirmed matches
+## False positives
 
-Confirmed matches are blocked or rejected and reported to OFAC within 10 business days.
+The BSA officer reviews each alert and records why a name was cleared. Release the hold only after the BSA officer clears it.

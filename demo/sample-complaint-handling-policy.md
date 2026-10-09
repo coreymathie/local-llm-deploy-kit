@@ -8,7 +8,7 @@ Every complaint is logged in the CRM on the day it is received, including compla
 
 ## Response times
 
-Acknowledge the complaint within 2 business days. Resolve it, or explain what is still needed, within 15 business days.
+Every complaint must be acknowledged within 2 business days. Resolve it, or explain what is still needed, within 15 business days.
 
 ## Escalation
 

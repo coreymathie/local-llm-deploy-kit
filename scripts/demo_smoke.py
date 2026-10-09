@@ -192,7 +192,8 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     page.wait_for_selector("#bizVolume svg.chart")
     expect(page.locator(".banner.sample")).to_contain_text("fictional")
     assert page.locator(".kpi.sample").count() == 8, page.locator(".kpi.sample").count()
-    assert page.locator("table.depts tbody tr").count() == 10
+    departments = json.loads((ROOT / "demo" / "data" / "library.json").read_text())["departments"]
+    assert page.locator("table.depts tbody tr").count() == len(departments)
     expect(page.locator("#pageTitle .crumbs")).to_contain_text("Admin")
     before = page.inner_text(".kpi.sample .value")
     page.click("[data-range='7']")
@@ -224,9 +225,10 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     expect(page.locator("#nav a[data-sub='session']")).to_have_attribute("aria-current", "page")
     assert int(page.inner_text('[data-kpi="requests"]').replace(",", "")) >= 5
     expect(page.locator('[data-kpi="chain"]')).to_have_text("Intact")
-    expect(page.locator('[data-kpi="documents"]')).to_have_text("57")
+    n_docs = len(json.loads((ROOT / "demo" / "data" / "library.json").read_text())["documents"])
+    expect(page.locator('[data-kpi="documents"]')).to_have_text(str(n_docs))
     assert page.locator("#view svg.chart").count() == 2 and page.locator(".try").count() == 5
-    run.ok("demo overview: KPIs from the engine (57 documents), chain intact, 2 charts, 5 guided cards")
+    run.ok(f"demo overview: KPIs from the engine ({n_docs} documents), chain intact, 2 charts, 5 guided cards")
     run.shot(page, "demo-overview")
 
     # 2. The assistant (business view): suggestions, citations, the source pane, refusals, compare, history
@@ -274,6 +276,26 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     expect(page.locator("#thread .msg.bot")).to_have_count(4)
     run.ok("demo assistant: new conversation, and the earlier one reopens from the history")
     run.shot(page, "demo-chat")
+    page.select_option("#persona", "kiosk")
+    page.click("#newChat")
+    page.click('.hero .sugg[data-q="What time do branches close on Saturday?"]')
+    last = page.locator("#thread .msg.bot").last
+    expect(last.locator(".msg-actions")).to_be_visible()
+    expect(last.locator(".answer")).to_contain_text("12:00")
+    expect(last.locator(".src-chip")).to_contain_text("Member information")
+    page.fill("#prompt", "How much cash is in a teller drawer?")
+    page.keyboard.press("Enter")
+    expect(page.locator("#thread .msg.bot").last.locator(".answer.not-found")).to_be_visible()
+    expect(page.locator("#thread .msg.bot").last.locator(".msg-actions")).to_be_visible()  # finished streaming
+    assert "15,000" not in page.locator("#thread .msg.bot").last.inner_text()
+    page.select_option("#persona", "audrey")
+    page.click("#newChat")
+    note = page.locator(".hero .sugg.expect-refusal .sugg-note")
+    expect(note).to_contain_text("refusal")
+    page.click(".hero .sugg.expect-refusal")
+    expect(page.locator("#thread .msg.bot").last.locator(".answer.not-found .hint")).to_contain_text("not cleared")
+    expect(page.locator("#thread .msg.bot").last.locator(".msg-actions")).to_be_visible()
+    run.ok("demo assistant: the kiosk answers from Member information only; the auditor's refusal is announced")
     # README image (docs/img/console.png): one comparison in a fresh conversation, the cited source open
     page.click("#newChat")
     page.check("#compare")
@@ -340,15 +362,20 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     page.fill("#docFilter", "")
     run.ok("demo documents: titles, owners and review dates; added, HTML-titled and untrusted documents; filter")
     travel = "Travel and Expense Policy"
+    dana_row = page.locator("#matrix tr", has_text="Dana Ortiz")
+    col = page.locator("#matrix th.doc").all_inner_texts().index(travel)
+    expect(dana_row.locator("td.cell").nth(col + 1)).to_have_attribute("aria-label", "can read")
     page.locator("#docTable tr", has_text=travel).locator('button[data-act="acl"]').click()
     page.fill("#aclInput", "group:finance")
     page.click("#aclForm button[type=submit]")
     expect(page.locator("#docTable tr", has_text=travel)).to_contain_text("group:finance")
-    kiosk = page.locator("#matrix tr", has_text="Branch lobby kiosk")
     titles = page.locator("#matrix th.doc").all_inner_texts()
     col = titles.index(travel)
-    expect(kiosk.locator("td.cell").nth(col + 1)).to_have_attribute("aria-label", "cannot read")
-    run.ok("demo documents: access list edited; the access matrix hides the document from the kiosk key")
+    dana = page.locator("#matrix tr", has_text="Dana Ortiz")
+    expect(dana.locator("td.cell").nth(col + 1)).to_have_attribute("aria-label", "cannot read")
+    kiosk = page.locator("#matrix tr", has_text="Branch lobby kiosk")
+    expect(kiosk.locator("td.cell").first).to_have_class(re.compile(r"\bno\b"))  # Staff policies: staff only
+    run.ok("demo documents: access list edited; the matrix hides the document from a staff member without the group")
     page.locator("#docTable tr", has_text=travel).locator('button[data-act="acl"]').click()
     page.fill("#aclInput", "not-an-entry")
     page.click("#aclForm button[type=submit]")
@@ -378,14 +405,14 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     expect(page.locator("#newKeyValue")).to_contain_text("sk-local-")
     expect(page.locator('#keysTable tr[data-label="smoke-app"]')).to_contain_text("group:hr")
     run.ok("demo keys: key created with a group; value shown once")
-    page.locator('#keysTable tr[data-label="billing-app"] button[data-act="burst"]').click()
+    page.locator('#keysTable tr[data-label="member-faq-portal"] button[data-act="burst"]').click()
     expect(page.locator("#sendLog .pill.warn").first).to_have_text("429")
     statuses = page.locator("#sendLog .pill").all_inner_texts()
     assert statuses.count("200") == 30 and statuses.count("429") == 2, statuses
     run.ok("demo keys: burst of 32 at 30/min: 30 x 200, 2 x 429 (auth._rate_limit)")
     page.once("dialog", lambda d: d.accept())
-    page.locator('#keysTable tr[data-label="billing-app"] button[data-act="revoke"]').click()
-    expect(page.locator('#keysTable tr[data-label="billing-app"] .pill.bad')).to_have_text("revoked")
+    page.locator('#keysTable tr[data-label="member-faq-portal"] button[data-act="revoke"]').click()
+    expect(page.locator('#keysTable tr[data-label="member-faq-portal"] .pill.bad')).to_have_text("revoked")
     run.ok("demo keys: key revoked")
     run.shot(page, "demo-users")
 
@@ -450,11 +477,11 @@ def demo(run: Run, p, port: int, pyodide_dir: Path | None) -> None:
     page.click("#scRun")
     expect(page.locator("#scBefore")).to_contain_text("403")
     original = page.input_value("#polText")
-    page.fill("#polText", original.replace('"auditors": ["reader:policies"]', '"auditors": ["superuser"]'))
+    page.fill("#polText", original.replace('"auditors": ["reader:*"]', '"auditors": ["superuser"]'))
     page.click("#polValidate")
     expect(page.locator("#polErrList")).to_contain_text("unknown role 'superuser'")
-    granted = '"auditors": ["reader:policies", "user"]'
-    page.fill("#polText", original.replace('"auditors": ["reader:policies"]', granted))
+    granted = '"auditors": ["reader:*", "user"]'
+    page.fill("#polText", original.replace('"auditors": ["reader:*"]', granted))
     page.click("#polApply")
     expect(page.locator("#polOk")).to_contain_text("GATEWAY_OIDC_GROUP_ROLES")
     expect(page.locator("#scAfter")).to_contain_text("200")

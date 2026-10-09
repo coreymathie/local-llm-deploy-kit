@@ -4,14 +4,15 @@
 
 This release reframes the console around the institution that would deploy the platform. The console is set in
 a fictional credit union and opens on an employee assistant, in the pattern of an internal Copilot-style tool,
-with a 57-document library behind it. Evidence: 230 tests, RAG evals with no ACL leaks (hybrid citation
-accuracy 0.837 → 0.884), and a 41-check browser smoke test across both console modes.
+with a 59-document library behind it. Evidence: 251 tests, an answer-quality eval over the sample library itself
+(59 questions asked as five personas, no ACL leaks, hybrid citation accuracy 0.920), and a 42-check browser
+smoke test across both console modes.
 
 ### Highlights
 - **Harbor Assistant is the landing screen.** Staff ask questions across every collection they may read; the
   access decision runs per collection before any passage is scored, and every answer cites the passages it used.
 - **A sample institution to assess the platform against.** Cypress Harbor Credit Union (fictional: 340
-  employees, 10 departments, 11 branches) with a 57-document library in five collections and 90 days of
+  employees, 11 departments, 11 branches) with a 59-document library in six collections and 90 days of
   **sample** usage, so adoption, restricted content withheld and cost per answer can be read the way an
   operator would read them.
 - **Business and technical views.** One switch separates what employees and administrators see from the
@@ -39,11 +40,12 @@ accuracy 0.837 → 0.884), and a 41-check browser smoke test across both console
   content withheld, member data sent outside, answers rated helpful, each against the previous period with trend
   lines; questions per day; adoption by department; topics; response time; collections and who may read them;
   governance checks; recent activity.
-- **Document library**: `scripts/sample_library.py` writes 44 more documents across five collections (staff
-  policies, member services, lending, compliance, branch operations) and `demo/data/library.json`, the catalog
-  the console and the usage file read (owners, departments, versions, review dates, access lists). OFAC
-  screening is restricted to `group:compliance`. CI checks the library is current; `tests/test_sample_library.py`
-  checks the catalog, that the usage file's collections match it, and cross-collection answers and access.
+- **Document library**: `scripts/sample_library.py` writes 46 more documents across six collections (staff
+  policies, member information, member services, lending, compliance, branch operations) and
+  `demo/data/library.json`, the catalog the console and the usage file read (owners, departments, versions,
+  review dates, collection and document access lists). CI checks the library is current;
+  `tests/test_sample_library.py` checks the catalog, that the usage file's collections match it, and
+  cross-collection answers and access.
 - **Sample usage data**: `scripts/generate_sample_company.py` writes `demo/data/sample_company.json` from a fixed
   seed and stated assumptions; CI checks it is current, and `tests/test_sample_company.py` checks its arithmetic
   and that it is labelled fictional.
@@ -70,13 +72,58 @@ accuracy 0.837 → 0.884), and a 41-check browser smoke test across both console
   question wins over its neighbours.
 - Documents: titles, owners and review dates, a filter, and a plain-language access matrix. Audit log: paging
   and a "Log intact" summary. Access policy: an "in effect now" summary above the JSON. Answer quality: labelled
-  as measured on the benchmark library.
+  as measured on the sample library.
 - Screens that need no engine (Ask, Usage and impact) render before Pyodide finishes.
-- People are named for the setting (Priya Shah, HR; Dana Ortiz, engineering; Audrey Kim, internal audit; branch
-  lobby kiosk).
+- People are named for the setting and its departments (Priya Shah, Human resources; Dana Ortiz, IT and digital
+  banking; Marcus Bell, Compliance and BSA; Audrey Kim, Internal audit; the branch lobby kiosk).
 - The original documents lose the "(fictional sample)" title suffix; the workspace is labelled instead.
 - The header keeps its controls at full size on narrower desktops; the breadcrumb gives way first.
 - Charts: the y axis of stacked columns sizes itself to its labels; horizontal bars take a label width.
+
+### Sample data and evaluation
+- **The sample institution tells one story.** One department list (11 departments) now serves document owners,
+  personas and usage figures; `scripts/sample_library.py` is its single source, and tests fail if the catalog,
+  the personas and `demo/data/sample_company.json` disagree.
+- **Member-facing content for the lobby kiosk.** A new *Member information* collection (how to become a member,
+  fees, branch hours and holidays, auto loan and savings rates, mobile deposit, skip-a-pay) is readable by
+  `group:public` and `group:staff`; every other collection is staff-only by collection access list. The kiosk's
+  key is in `group:public`, so it reads 7 member-facing documents instead of 53 of 57. Its seeded question is now
+  "What time do branches close on Saturday?".
+- **Roles that match the people.** Internal audit (`group:auditors`) maps to `reader:*`: read-only across every
+  collection, restricted documents still hidden, no free-form chat. Persona labels use department names (Dana
+  Ortiz, IT and digital banking; Marcus Bell, Compliance and BSA). Demo API keys are `member-faq-portal`
+  (`group:public`) and `staff-intranet-search` (`group:staff`), replacing `billing-app` and `qa-app` (which could
+  read the payments runbook).
+- **Library corrections.** Documents moved to their collections (card disputes and wires to Member services,
+  lending guidelines to Lending, records retention, complaints and the BSA procedure to Compliance, branch
+  security to Branch operations). The duplicate ATM and debit card procedure merged into the Card Dispute
+  Procedure (60-day reporting window, 45 or 90 days to resolve); the teller drawer limit and robbery steps now
+  live in one document each; new-member ID requirements match across documents. An all-staff *Unusual Activity
+  Referral Policy* carries the front-line steps, OFAC screening is all-staff, and the restricted BSA/AML
+  escalation procedure covers only the Compliance and BSA department's review, filing and confirmed-match steps.
+- **Regulatory and wording fixes.** Mobile deposit makes the first $275 available next day (the Regulation CC
+  amount since July 2025), and holds no longer apply to deposits above the $5,000 daily limit. The hardship
+  program defines the $35 deferral fee it waives. Records retention drops GDPR-style deletion requests for a US
+  disposal rule. Every document was reviewed within 12 months of the usage period. References to an "AI voice
+  agent", "People Operations", "the company" and "customer information" are gone.
+- **Suggested questions answer from the right document.** Suggestions per person now live in `demo/engine.py`
+  with the document each one demonstrates, and a test asks every one through the engine. Audrey's salary-band
+  suggestion is labelled as a refusal and the answer explains that the document is restricted. The extractive
+  answerer ignores question-form words ("how long", "how much") when choosing sentences.
+- **Usage figures that add up.** `scripts/generate_sample_company.py` generates questions per department and day
+  and splits them into topics only for departments that can read the documents behind each topic. Topic charts
+  sum the daily rows for the selected range (the 90-day view previously showed 47,646 topic questions for 42,262
+  asked); 30-day active users (293) exceed the busiest day (226); the BSA/AML investigation topic stays within
+  Compliance and BSA's own questions; Facilities and security has 8 staff, not 43.
+- **Answer quality measured on the demo's own library.** The generic golden set (12 documents and 43 questions
+  for an unrelated company, with facts that contradicted the library) is replaced by 59 paraphrased staff and
+  member questions over the Cypress Harbor library: 50 answerable across every collection, including all three
+  restricted documents asked by someone cleared for them, and 9 to decline. Each question is asked as a persona
+  through the console's *All sources* path, and every question is also retrieved as every persona for the ACL
+  leak check, decided from the catalog independently of the gateway's access code. A new decline-accuracy metric
+  is reported. Published results changed to the new measurement (hybrid: recall@1 0.880, MRR 0.940, citation
+  accuracy 0.920, decline accuracy 0.222; 0 leaks in every configuration), and `evals/thresholds.json` is set one
+  point below each measured value.
 
 ### Fixed
 - Feedback buttons toggled twice per click after the chat re-rendered (stacked click listeners).

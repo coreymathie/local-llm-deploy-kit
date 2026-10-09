@@ -2,7 +2,7 @@
 
 This document separates three kinds of performance evidence and labels each one: the method and template for
 model-serving numbers (none published), the **measured** overhead the gateway adds in front of an inference
-server, and the **measured** retrieval quality on the bundled golden set. Numbers from different kinds must not
+server, and the **measured** answer quality on the sample library's golden set. Numbers from different kinds must not
 be compared with each other.
 
 1. **Model serving numbers** (time to first token, tokens/s under load) for a real model on real hardware.
@@ -10,7 +10,7 @@ be compared with each other.
    been published yet.** The method below and the results template are the path to adding them.
 2. **Gateway overhead**: what the gateway itself adds (auth, rate limiting, SQLite usage accounting, SSE
    re-encoding, metrics) when the upstream answers instantly. Measured; results below.
-3. **Retrieval quality**: the RAG eval over the golden set. Measured; results below.
+3. **Answer quality**: the eval over the sample library and its golden questions. Measured; results below.
 
 ## Method
 
@@ -105,19 +105,28 @@ python scripts/loadtest.py --url http://127.0.0.1:8001 --key x --model mock-mode
 
 ## Retrieval quality (measured, golden set)
 
-`python scripts/rag_eval.py` (runs in about 1.5 s on the build host; CI runs it with `--check`). Same caveats
-as [ADR 0006](adr/0006-hybrid-retrieval-and-rag-evals.md): demo hashed bag-of-words embedder (not a neural
-model), extractive answerer (no LLM), a small golden set written by one author. A regression baseline for the
-retrieval pipeline, not a statement about answer quality in production.
+`python scripts/rag_eval.py` (runs in about 12 s on the build host; CI runs it with `--check`). The questions
+are asked against the console's own Cypress Harbor library through the console's "All sources" path, each as
+the persona who would ask it, and every question is also retrieved as every persona for the ACL leak check.
+Same caveats as [ADR 0006](adr/0006-hybrid-retrieval-and-rag-evals.md): demo hashed bag-of-words embedder (not a
+neural model), extractive answerer (no LLM) with a fixed relevance floor, and a library and golden set written
+by one author. A regression baseline for the pipeline, not a statement about answer quality in production.
+Method, coverage and thresholds: [evals/README.md](../evals/README.md).
 
-Golden set: 12 fictional documents (2 restricted), 43 questions, k=4. Embedder: demo hashed bag-of-words (512-d), not a neural model. Answers: demo extractive (no LLM).
+Golden set: 59 questions (50 answerable, 9 to decline) over the Cypress Harbor sample library: 59 documents in 6 collections (3 restricted), asked as 5 personas, k=4. Embedder: demo hashed bag-of-words (512-d), not a neural model. Answers: demo extractive (no LLM), with the console's relevance floor.
 
-| Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | ACL leaks |
-|---|---:|---:|---:|---:|---:|---:|
-| `vector+none` | 0.907 | 0.977 | 0.942 | 0.907 | 0.954 | 0 |
-| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.907 | 0.977 | 0 |
-| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
-| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |
+| Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | decline accuracy | ACL leaks |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `vector+none` | 0.800 | 0.960 | 0.872 | 0.860 | 0.840 | 0.222 | 0 |
+| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.900 | 0.860 | 0.111 | 0 |
+| `hybrid+none` | 0.880 | 1.000 | 0.940 | 0.920 | 0.840 | 0.222 | 0 |
+| `hybrid+lexical` | 0.960 | 1.000 | 0.975 | 0.880 | 0.860 | 0.222 | 0 |
+
+Decline accuracy is the share of the 9 decline questions answered with "I don't know" and no citation. It is low
+because the console declines only below a fixed vector-similarity floor, and bm25-only retrieval has no vector
+score at all. Those answers come from documents the asker may read (0 leaks); they are unhelpful, not unsafe.
+The previous golden set (12 generic documents, 43 questions for an unrelated fictional company) is no longer
+published; it remains in git history.
 
 ## Storage and encryption cost (measured)
 

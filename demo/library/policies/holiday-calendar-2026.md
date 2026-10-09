@@ -4,9 +4,9 @@
 
 The credit union observes New Year's Day, Martin Luther King Jr. Day, Presidents Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Columbus Day, Veterans Day, Thanksgiving Day and Christmas Day.
 
-## Branch and contact-center hours
+## Branch and contact-center staffing
 
-Branches and the member contact center are closed on observed holidays. The AI voice agent and online banking stay available, and holiday transfers to a person go to the next business day callback queue.
+Branches and the member contact center are closed on observed holidays. Online banking and the mobile app stay available, and callback requests left on a holiday are returned on the next business day.
 
 ## Floating holiday
 

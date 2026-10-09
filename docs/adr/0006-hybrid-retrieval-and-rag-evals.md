@@ -24,11 +24,13 @@ embedding or ranking was unmeasured.
 3. **Access control first.** Ranking only ever sees passages that `rag.access_for` admitted (ADR 0005, OWASP
    LLM08); BM25 statistics are therefore computed per caller, so term frequencies of hidden documents cannot
    influence scores either.
-4. **Evals gate CI.** `scripts/rag_eval.py --check` runs the real ingestion, access and retrieval code over a
-   bundled golden set (`evals/golden/`: fictional documents, questions, expected document and answer phrase, two
-   restricted documents) with the demo's deterministic embedder and extractive answerer, so it runs offline in
-   seconds. It fails if recall@1, recall@k, MRR, citation accuracy or answer-contains drop below
-   `evals/thresholds.json`, or if any restricted passage is retrieved for a caller without access.
+4. **Evals gate CI.** `scripts/rag_eval.py --check` runs the real ingestion, access and retrieval code over the
+   console's sample library (`demo/data/library.json`: 59 documents in 6 collections, with collection and
+   document access lists) and a golden set (`evals/golden/questions.jsonl`: the persona who asks, the expected
+   document and answer phrase, or a question to decline) with the demo's deterministic embedder and extractive
+   answerer, so it runs offline in seconds. It fails if recall@1, recall@k, MRR, citation accuracy,
+   answer-contains or decline accuracy drop below `evals/thresholds.json`, or if any persona retrieves a passage
+   from a document the catalog's access lists say it may not read.
 
 **Implementation and evidence.** `gateway/retrieval.py`, `gateway/rag.py::retrieve`, `scripts/rag_eval.py`,
 `evals/`. Tests: `tests/test_retrieval.py`,
@@ -36,19 +38,23 @@ embedding or ranking was unmeasured.
 
 ## Consequences
 
-**Measured baseline** (k = 4; demo hashed bag-of-words embedder, not a neural model; 43 questions, 12 documents):
+**Measured baseline** (k = 4; demo hashed bag-of-words embedder, not a neural model; 59 questions, 50 answerable
+and 9 to decline, over the 59-document sample library, asked as 5 personas):
 
-| Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | ACL leaks |
-|---|---:|---:|---:|---:|---:|---:|
-| `vector+none` | 0.907 | 0.977 | 0.942 | 0.907 | 0.954 | 0 |
-| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.907 | 0.977 | 0 |
-| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
-| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |
+| Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | decline accuracy | ACL leaks |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `vector+none` | 0.800 | 0.960 | 0.872 | 0.860 | 0.840 | 0.222 | 0 |
+| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.900 | 0.860 | 0.111 | 0 |
+| `hybrid+none` | 0.880 | 1.000 | 0.940 | 0.920 | 0.840 | 0.222 | 0 |
+| `hybrid+lexical` | 0.960 | 1.000 | 0.975 | 0.880 | 0.860 | 0.222 | 0 |
 
-These numbers need careful reading: the questions and documents were written by the same author and share
-vocabulary, which favors BM25; the embedder is a hashing stand-in, which handicaps the vector ranking; citation
-accuracy is limited by the extractive answerer citing extra sources. They are a regression baseline for the
-pipeline, not a claim about answer quality with a real embedding model and LLM.
+These numbers need careful reading: the questions are paraphrased, but the library and the questions share one
+author, which favors BM25; the embedder is a hashing stand-in, which handicaps the vector ranking; citation
+accuracy and answer-contains are limited by the extractive answerer picking or adding the wrong sentence; decline
+accuracy is limited by a fixed relevance floor that bm25-only retrieval cannot apply. They are a regression
+baseline for the pipeline, not a claim about answer quality with a real embedding model and LLM. An earlier
+generic golden set (12 documents, 43 questions for an unrelated fictional company) was replaced because it did
+not exercise the demo's own library, collections or personas; its numbers are no longer published.
 
 **Positive**
 

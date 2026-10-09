@@ -11,3 +11,7 @@ Courtesy pay applies to ATM and one-time debit card transactions only if the mem
 ## Repayment
 
 An overdrawn account must be brought positive within 30 days. After 45 days negative, the account goes to the collections team.
+
+## Fee waivers
+
+Member services representatives may waive one overdraft fee per member every 12 months. Further waivers need a supervisor's approval and a note in the CRM.

@@ -28,14 +28,12 @@ export const docIcon = (type) => `<span class="doc-ico t-${esc(type || "md")}" a
 
 // ---------- people ----------
 
-const SUGGEST = {
-  priya: ["What is the level 3 salary band?", "How many days of PTO do I get?", "What is the 401k match?", "Can I accept a gift from a member?"],
-  dana: ["How fast must the payments on-call engineer acknowledge a page?", "When is the production change freeze?", "How long is a vendor account valid?", "How long must passwords be?"],
-  marcus: ["How fast must a potential OFAC match go to the BSA officer?", "When must unusual activity be referred to the BSA team?", "How long can we delay a suspicious transaction for an older member?", "How fast must a complaint be acknowledged?"],
-  audrey: ["How long are audit logs retained?", "Who approves out-of-cycle salary adjustments?", "What is the gift limit for employees?", "When is the production change freeze?"],
-  kiosk: ["What time do branches close on Saturday?", "How much is a stop payment?", "What rate is a new car loan?", "How do I become a member?"],
+// Suggested questions come from demo/engine.py (PERSONAS, STAFF_SUGGESTED, STAFF_POPULAR) through the adapter;
+// tests/test_sample_library.py checks that each one is answered from the document it is meant to demonstrate.
+const suggestionsFor = (S, id) => {
+  const all = S.A.suggestions ? S.A.suggestions() : { personas: {}, popular_for: {}, default: [], popular: [] };
+  return { sugg: all.personas[id] || all.default, popular: all.popular_for[id] || all.popular };
 };
-const DEFAULT_SUGGEST = ["What is the hotel cap per night?", "How long is an oral stop payment good for?", "What should I do if my laptop is stolen?", "Which wires need a callback?"];
 const PEOPLE = new Set(["priya", "dana", "marcus", "audrey", "kiosk"]);
 
 const firstName = (name) => String(name || "").split(/[\s(]/)[0];
@@ -113,7 +111,10 @@ function answerBody(S, res, key, live) {
   if (res.status !== 200) return `<div class="answer refused" role="status">${esc(friendlyError(res))}</div>${techDetails(S, res)}`;
   const text = res.answer ?? res.content ?? "";
   if (text.startsWith(NO_ANSWER_PREFIX)) {
-    return `<div class="answer not-found"><b>I couldn't find that in the documents you can access.</b><span class="hint">Try different words, or ask about a policy or procedure by name.</span></div>${techDetails(S, res)}`;
+    const hint = res.expectRefusal
+      ? `${esc(res.expectRefusal)}. The answer exists in a document this person is not cleared for, so it never reached the search, the prompt or the citations.`
+      : "Try different words, or ask about a policy or procedure by name.";
+    return `<div class="answer not-found"><b>I couldn't find that in the documents you can access.</b><span class="hint">${hint}</span></div>${techDetails(S, res)}`;
   }
   const flagged = (res.sources || []).filter((s) => s.injection_flags && s.injection_flags.length);
   const shown = live != null ? text.split(" ").slice(0, live).join(" ") : text;
@@ -168,7 +169,7 @@ export async function chat(view, S) {
       <div class="hist-label">Today</div>
       <ul class="hist-list">${c.sessions.filter((s) => s.thread.length || s.id === c.current).map((s) => `<li><button type="button" data-session="${s.id}" ${s.id === c.current ? 'aria-current="true"' : ""}>${esc(s.title)}</button></li>`).join("")}</ul>
       <div class="hist-label">Popular this week</div>
-      <ul class="hist-list popular">${["How long is an oral stop payment good for?", "What is the hotel cap per night?", "When do branches close for a hurricane?", "What is the 401k match?"].map((q) => `<li><button type="button" data-q="${esc(q)}">${esc(q)}</button></li>`).join("")}</ul>
+      <ul class="hist-list popular">${suggestionsFor(S, c.persona).popular.map(({ q }) => `<li><button type="button" data-q="${esc(q)}">${esc(q)}</button></li>`).join("")}</ul>
     </aside>
     <section class="convo" aria-label="Assistant">
       <div class="convo-head">
@@ -203,13 +204,13 @@ export async function chat(view, S) {
     if (!thread) return;
     const t = sess.thread;
     if (!t.length) {
-      const sugg = SUGGEST[c.persona] || DEFAULT_SUGGEST;
+      const { sugg } = suggestionsFor(S, c.persona);
       const name = PEOPLE.has(c.persona) && c.persona !== "kiosk" ? `, ${esc(firstName(me.name))}` : "";
       thread.innerHTML = `<div class="hero">
         <div class="hero-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
         <h1>${greeting()}${name}</h1>
         <p class="hero-sub">${ready ? `Ask about Cypress Harbor's policies, procedures and products. Answers cite the documents ${c.persona === "kiosk" ? "this kiosk" : "you"} can read${S.whoCount ? `: ${S.whoCount} of ${catalog().documents.length}` : ""}.` : "Getting the assistant ready. It runs entirely inside the credit union's network."}</p>
-        <div class="sugg-grid">${sugg.map((q) => `<button type="button" class="sugg" data-q="${esc(q)}" ${ready ? "" : "disabled"}><span>${esc(q)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>`).join("")}</div>
+        <div class="sugg-grid">${sugg.map(({ q, note }) => `<button type="button" class="sugg${note ? " expect-refusal" : ""}" data-q="${esc(q)}" ${ready ? "" : "disabled"}><span>${esc(q)}${note ? `<small class="sugg-note">${esc(note)}</small>` : ""}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>`).join("")}</div>
       </div>`;
     } else {
       thread.innerHTML = t.map((m, i) => m.role === "user"
@@ -289,6 +290,8 @@ export async function chat(view, S) {
         const res = c.kind === "model"
           ? await A.chat(id, text)
           : await A.ask(id, c.collection, text, { top_k: c.top_k, mode: c.mode, reranker: c.reranker });
+        const note = (suggestionsFor(S, id).sugg.find((x) => x.q === text) || {}).note;
+        if (note && res && res.status === 200) res.expectRefusal = note;
         msg.results.push({ persona: id, personaName: personaOf(S, id).name, res });
       }
     } catch (e) {

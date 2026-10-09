@@ -6,7 +6,7 @@ Every production change has a ticket with a rollback plan and an approver who di
 
 ## Change freeze
 
-No production changes are made between December 20 and January 3, or in the two business days before and after month-end close, except emergency fixes approved by the CIO.
+The production change freeze runs from December 20 to January 3 and covers the two business days before and after month-end close. Only emergency fixes approved by the CIO are deployed during a freeze.
 
 ## Emergency changes
 

@@ -2,7 +2,7 @@
 
 ## Passwords
 
-Passwords must be at least 14 characters long. Use the company password manager; do not reuse a work password anywhere else.
+Passwords must be at least 14 characters long. Use the credit union's password manager, and never reuse a work sign-in anywhere else.
 
 ## Multi-factor authentication
 

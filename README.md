@@ -16,7 +16,7 @@ outside the model, in front of a private inference server.**
 | **Architecture** | One FastAPI gateway (OpenAI-compatible API) in front of Ollama or any OpenAI-compatible server (vLLM, SGLang, TGI, NVIDIA NIM). SQLite for keys, documents and vectors; a hash-chained JSONL audit log. |
 | **Key decisions** | Pluggable inference backend; on-host embeddings with hybrid BM25 + vector retrieval; OIDC tokens alongside API keys; envelope encryption; pinned model digests. Each recorded as an ADR with its trade-off. |
 | **Controls** | API keys and OIDC SSO with group roles; collection and document access lists applied before scoring; rate limits; PII redaction; SHA-256 audit chain; model lock file with an off/warn/enforce policy and a CycloneDX ML-BOM. |
-| **Evidence** | 230 automated tests; a RAG eval gate in CI with 0 ACL leaks; hybrid citation accuracy 0.837 → 0.884 on the golden set; a 41-check headless browser smoke test across both console modes; 8 ADRs. |
+| **Evidence** | 251 automated tests; an answer-quality eval gate in CI over the sample credit union's own library (59 questions asked as 5 personas, 0 ACL leaks, hybrid citation accuracy 0.920); a 42-check headless browser smoke test across both console modes; 8 ADRs. |
 | **Out of scope** | SCIM provisioning, ACL sync from source systems, a KMS key provider, model signature verification and multi-replica operation are roadmap items. No model-serving benchmarks are published. |
 | **Try it** | [Live console](https://coreymathie.github.io/private-llm-platform/demo/): the gateway's real Python modules in your browser through Pyodide. Locally, `docker compose up` needs no model or GPU. |
 
@@ -163,24 +163,29 @@ certifications.
 
 ## Evaluation and evidence
 
-**Tests.** 230 automated tests, all passing, run in CI with lint, format, `shellcheck` and `helm lint`; upstream
+**Tests.** 251 automated tests, all passing, run in CI with lint, format, `shellcheck` and `helm lint`; upstream
 HTTP is mocked for both backend wire formats, and the docs are tested so that every referenced test and code
 symbol exists. Coverage by file: [docs/testing.md](docs/testing.md).
 
 ### Quality
 
-**RAG eval gate (measured).** `scripts/rag_eval.py --check` runs the real ingestion, access-control and retrieval
-code over a bundled golden set (12 fictional documents, 2 of them restricted, 43 questions) and fails CI on a
-drop below `evals/thresholds.json` or any ACL leak. Measured at k=4 with the demo's hashed bag-of-words embedder
-(not a neural model) and extractive answerer (no LLM), so it is a regression baseline rather than a quality
-claim ([ADR 0006](docs/adr/0006-hybrid-retrieval-and-rag-evals.md)):
+**Answer-quality eval gate (measured).** `scripts/rag_eval.py --check` runs the real ingestion, access-control
+and retrieval code over the console's own sample library (59 Cypress Harbor documents in 6 collections, 3 of them
+restricted) with 59 paraphrased staff and member questions, each asked as the persona who would ask it: 50 with an
+answer in a document the asker may read, 9 that should be declined (nothing answers them, or the answer is in a
+document the asker is not cleared for). Every question is also retrieved as every persona and checked against
+the catalog's access lists; any passage a persona may not read is a leak. CI fails on a drop below
+`evals/thresholds.json` (set one point under these values) or any leak. Measured at k=4 with the demo's hashed
+bag-of-words embedder (not a neural model) and extractive answerer (no LLM), so it is a regression baseline
+rather than a quality claim; the low decline accuracy reflects the answerer's fixed relevance floor
+([evals/README.md](evals/README.md), [ADR 0006](docs/adr/0006-hybrid-retrieval-and-rag-evals.md)):
 
-| Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | ACL leaks |
-|---|---:|---:|---:|---:|---:|---:|
-| `vector+none` | 0.907 | 0.977 | 0.942 | 0.907 | 0.954 | 0 |
-| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.907 | 0.977 | 0 |
-| `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
-| `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |
+| Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | decline accuracy | ACL leaks |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `vector+none` | 0.800 | 0.960 | 0.872 | 0.860 | 0.840 | 0.222 | 0 |
+| `bm25+none` | 1.000 | 1.000 | 1.000 | 0.900 | 0.860 | 0.111 | 0 |
+| `hybrid+none` | 0.880 | 1.000 | 0.940 | 0.920 | 0.840 | 0.222 | 0 |
+| `hybrid+lexical` | 0.960 | 1.000 | 0.975 | 0.880 | 0.860 | 0.222 | 0 |
 
 ### Benchmarks
 
@@ -202,7 +207,7 @@ weights, so [docs/benchmarks.md](docs/benchmarks.md) provides a method, a result
 **Storage (measured).** Encryption at rest and backup/restore time on a synthetic 3,883-passage collection:
 [docs/operations.md](docs/operations.md#encryption-at-rest) (`scripts/bench_storage.py`).
 
-**Console (measured).** `scripts/demo_smoke.py` drives the real console headlessly in both modes: 41 checks, no
+**Console (measured).** `scripts/demo_smoke.py` drives the real console headlessly in both modes: 42 checks, no
 console errors, no horizontal scroll at 390 px.
 
 ## Operations
@@ -299,7 +304,7 @@ Document Q&A: [docs/document-qa.md](docs/document-qa.md).
 ```bash
 pip install -r requirements.txt ruff opentelemetry-sdk
 ruff check gateway tests scripts demo && ruff format --check gateway tests scripts demo && pytest -q
-python scripts/rag_eval.py --check   # retrieval eval gate (also run inside pytest)
+python scripts/rag_eval.py --check   # answer-quality eval gate (also run inside pytest)
 ```
 
 More, including the browser smoke test: [docs/testing.md](docs/testing.md).
@@ -317,7 +322,7 @@ deploy/      grafana-dashboard.json, prometheus.yml, helm/local-llm-gateway (cha
 Dockerfile   gateway image (non-root, state under /data)
 scripts/     installers, ingest_folder.py, loadtest.py, mock_openai_server.py, demo_smoke.py, rag_eval.py,
              keys.py, backup.py, restore.py, bench_storage.py, pin_models.py, mlbom.py, airgap_bundle.sh
-evals/       golden set (fictional documents, questions, access lists) and CI thresholds
+evals/       golden questions over the sample library (personas, expected documents, declines) and CI thresholds
 profiles/    healthcare.env, finance.env, compose-ollama.env
 docs/        adr/, threat-model, controls, compliance, identity, document-qa, operations, configuration, console,
              testing, kubernetes, benchmarks, quickstart, enterprise, Windows notes

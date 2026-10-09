@@ -6,7 +6,7 @@ Employees with at least 6 months of service may apply for tuition reimbursement 
 
 ## Amounts
 
-The credit union reimburses up to $5,250 per calendar year for courses completed with a grade of B or better. Certification exams relevant to the employee's role are reimbursed in full.
+Tuition is reimbursed up to $5,250 per calendar year for courses completed with a grade of B or better. Certification exams relevant to the employee's role are reimbursed in full.
 
 ## Applying
 

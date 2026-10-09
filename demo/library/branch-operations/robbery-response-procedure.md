@@ -2,7 +2,7 @@
 
 ## During a robbery
 
-Comply with the robber's demands and give bait money if it is safe to do so. Do not chase or follow the robber.
+During a robbery, comply with the robber's demands and give bait money if it is safe to do so. Do not chase or follow the robber.
 
 ## After the robbery
 
