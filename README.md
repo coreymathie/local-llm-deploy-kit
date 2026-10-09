@@ -8,24 +8,17 @@
 OpenAI-compatible gateway that places identity, permission-aware retrieval, audit evidence and model governance
 outside the model, in front of a private inference server.**
 
-## Executive summary
+## At a glance
 
-- **Problem.** Credit unions, banks and other regulated institutions want staff-facing assistants over their
-  own policies and procedures, but cannot send prompts or documents to a public API, and a bare model server has
-  no identity, no access control, no limits and no record an auditor can trust.
-- **Approach.** One FastAPI gateway (SQLite, a JSONL audit log) exposes the OpenAI API in front of a
-  self-hosted model: **Ollama** on a laptop or small server, or **vLLM / SGLang / TGI / NVIDIA NIM** on a GPU
-  host. It answers document questions with citations over hybrid retrieval and deploys on a single host, with
-  Docker Compose, or on Kubernetes with Helm, including air-gapped installs.
-- **Controls.** Per-application API keys and **OIDC single sign-on with group-based roles**; access decided
-  before retrieval; a **tamper-evident, hash-chained audit log**; envelope encryption at rest; model pinning
-  with a CycloneDX ML-BOM; prompt-injection defense in depth; PII redaction; rate limits; Prometheus metrics
-  and OpenTelemetry GenAI spans.
-- **Evidence.** 230 automated tests; a RAG eval gate in CI with zero ACL leaks across four retrieval
-  configurations; **measured** gateway overhead (p50 9.2 ms through the gateway versus 3.5 ms direct at
-  concurrency 1); a 41-check browser smoke test of the console.
-- **Out of scope.** SCIM provisioning, ACL sync from source systems, a KMS key provider, model signature
-  verification and multi-replica operation are roadmap items. No model-serving benchmarks are published.
+| | |
+|---|---|
+| **Problem** | Regulated teams can't send prompts or documents to a public API, and a bare model server has no identity, limits, access control or audit trail. |
+| **Architecture** | One FastAPI gateway (OpenAI-compatible API) in front of Ollama or any OpenAI-compatible server (vLLM, SGLang, TGI, NVIDIA NIM). SQLite for keys, documents and vectors; a hash-chained JSONL audit log. |
+| **Key decisions** | Pluggable inference backend; on-host embeddings with hybrid BM25 + vector retrieval; OIDC tokens alongside API keys; envelope encryption; pinned model digests. Each recorded as an ADR with its trade-off. |
+| **Controls** | API keys and OIDC SSO with group roles; collection and document access lists applied before scoring; rate limits; PII redaction; SHA-256 audit chain; model lock file with an off/warn/enforce policy and a CycloneDX ML-BOM. |
+| **Evidence** | 230 automated tests; a RAG eval gate in CI with 0 ACL leaks; hybrid citation accuracy 0.837 → 0.884 on the golden set; a 41-check headless browser smoke test across both console modes; 8 ADRs. |
+| **Out of scope** | SCIM provisioning, ACL sync from source systems, a KMS key provider, model signature verification and multi-replica operation are roadmap items. No model-serving benchmarks are published. |
+| **Try it** | [Live console](https://coreymathie.github.io/private-llm-platform/demo/): the gateway's real Python modules in your browser through Pyodide. Locally, `docker compose up` needs no model or GPU. |
 
 ## Live demo
 
