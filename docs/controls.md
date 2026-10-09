@@ -1,21 +1,23 @@
 # Controls mapping
 
-How the kit's technical controls line up with common frameworks. Each row points at the code that
-implements the control and the test that exercises it. Status:
+This document maps the platform's technical controls to the HIPAA Security Rule, SOC 2, the NIST AI RMF and
+its Generative AI Profile, ISO/IEC 42001 and the OWASP Top 10 for LLM Applications. Each row names the
+enforcement point in code and the test that produces evidence for it, and states what the control does not
+cover. Status values:
 
-- **Implemented**: in the gateway and covered by a test.
-- **Partial**: helps meet the requirement but needs a deployer control or is limited (stated).
+- **Implemented**: enforced in the gateway and covered by a test.
+- **Partial**: supports the requirement but needs a deployer control or is limited (stated).
 - **Deployer**: outside the gateway by design (host, network, process); guidance in the docs.
 - **Roadmap**: not implemented.
 
-This is an engineering mapping, not a compliance attestation or legal advice. Using the kit does not
-make a deployment HIPAA- or SOC 2-compliant; it provides technical safeguards and evidence that a
-compliance program can use. For operating procedures (WORM retention, air-gap install, monthly review)
-see [compliance.md](compliance.md); for threats and residual risks see [threat-model.md](threat-model.md).
+This is an engineering mapping, not a compliance attestation or legal advice. Deploying the platform does not
+make an institution HIPAA- or SOC 2-compliant; it provides technical safeguards and evidence that a compliance
+program can use. Operating procedures (WORM retention, air-gap install, monthly review) are in
+[compliance.md](compliance.md); threats and residual risks in [threat-model.md](threat-model.md).
 
 ## HIPAA Security Rule: technical safeguards (45 CFR 164.312)
 
-| Standard | Kit control | Status | Code | Test |
+| Standard | Platform control | Status | Code | Test |
 |---|---|---|---|---|
 | (a)(1) Access control; (a)(2)(i) unique user identification | One API key per application; OIDC access tokens identify individual users (`user:<username>`), with roles from IdP groups; document Q&A limited to documents the caller's groups may read (`gateway/rag.py::access_for`); every request authenticated; usage counted per key and per token user | Implemented when OIDC is enabled (API keys alone identify applications only) | `gateway/identity.py`, `gateway/auth.py`, `gateway/store.py::record_principal_usage` | `test_gateway.py::test_requires_bearer_key`; `test_identity.py::test_rs256_and_es256_tokens_map_groups_to_roles`, `::test_token_users_are_metered_without_user_names_in_metrics` |
 | (a)(2)(ii) Emergency access procedure | Bootstrap admin key can be preset (`GATEWAY_ADMIN_BOOTSTRAP_KEY`); last admin key can't be revoked | Partial: no break-glass workflow | `gateway/store.py::ensure_bootstrap_admin`, `gateway/main.py::admin_revoke_key` | `test_gateway.py::test_bootstrap_admin_created_once`, `::test_cannot_revoke_last_admin` |
@@ -28,7 +30,7 @@ see [compliance.md](compliance.md); for threats and residual risks see [threat-m
 
 ## SOC 2 (2017 Trust Services Criteria): CC6 and CC7
 
-| Criterion | Kit control | Status | Code | Test |
+| Criterion | Platform control | Status | Code | Test |
 |---|---|---|---|---|
 | CC6.1 Logical access security | Authenticated API (API keys or OIDC tokens); admin-only routes for keys, documents and model pulls | Implemented | `gateway/auth.py`, `gateway/identity.py`, `gateway/main.py` | `test_gateway.py::test_non_admin_cannot_manage_keys`; `test_documents.py::test_only_admins_add_or_remove_documents`; `test_identity.py::test_admin_api_respects_roles_and_audits_the_user` |
 | CC6.2 Registration and authorization before issuing credentials | Only admins create keys; each creation audited with the creator | Implemented | `gateway/main.py::admin_create_key` | `test_gateway.py::test_audit_log_records_admin_actions_and_redacted_prompts` |
@@ -44,7 +46,7 @@ see [compliance.md](compliance.md); for threats and residual risks see [threat-m
 
 ## NIST AI RMF 1.0 and the Generative AI Profile (NIST AI 600-1)
 
-| Function / GAI risk | Kit control | Status | Code | Test |
+| Function / GAI risk | Platform control | Status | Code | Test |
 |---|---|---|---|---|
 | GOVERN: documented decisions and accountability | ADRs, threat model, this mapping; every admin action attributed to a key label | Partial: organizational policies are Deployer | `docs/adr/`, `gateway/audit.py` | `test_gateway.py::test_audit_log_records_admin_actions_and_redacted_prompts` |
 | MAP: context and risks | Threat model with STRIDE and OWASP LLM Top 10; sector profiles | Implemented (documentation) | `docs/threat-model.md`, `profiles/` | `test_deploy_config.py::test_env_example_and_profiles_only_use_known_settings` |
@@ -58,11 +60,11 @@ see [compliance.md](compliance.md); for threats and residual risks see [threat-m
 
 ## ISO/IEC 42001:2023 (selected Annex A controls)
 
-The kit supports a few technical controls; an AI management system (clauses 4–10, policies, roles,
-impact assessments) is organizational and out of scope. Check control numbers against your copy of
-the standard.
+The platform supports a few technical controls; an AI management system (clauses 4–10, policies, roles,
+impact assessments) is organizational and out of scope. Control numbers should be checked against a licensed
+copy of the standard.
 
-| Control | Kit control | Status | Code | Test |
+| Control | Platform control | Status | Code | Test |
 |---|---|---|---|---|
 | A.6.2.6 AI system operation and monitoring | Prometheus metrics, Grafana dashboard, health endpoint with backend status | Implemented | `gateway/metrics.py`, `gateway/main.py::health` | `test_metrics.py`; `test_backends.py::test_default_backend_is_ollama` |
 | A.6.2.7 AI system technical documentation | ADRs, threat model, controls mapping, benchmarks method | Implemented (documentation) | `docs/` | n/a |

@@ -1,12 +1,16 @@
 # Benchmarks
 
-Two kinds of numbers belong here, and they must not be mixed up:
+This document separates three kinds of performance evidence and labels each one: the method and template for
+model-serving numbers (none published), the **measured** overhead the gateway adds in front of an inference
+server, and the **measured** retrieval quality on the bundled golden set. Numbers from different kinds must not
+be compared with each other.
 
 1. **Model serving numbers** (time to first token, tokens/s under load) for a real model on real hardware.
-   These depend almost entirely on the inference server, the model, the quantization and the GPU.
-   **None have been published yet.** Use the method below and the results template to add them.
-2. **Gateway overhead**: what the gateway itself adds (auth, rate limiting, SQLite usage accounting,
-   SSE re-encoding, metrics) when the upstream answers instantly. These were measured and are below.
+   These depend almost entirely on the inference server, the model, the quantization and the GPU. **None have
+   been published yet.** The method below and the results template are the path to adding them.
+2. **Gateway overhead**: what the gateway itself adds (auth, rate limiting, SQLite usage accounting, SSE
+   re-encoding, metrics) when the upstream answers instantly. Measured; results below.
+3. **Retrieval quality**: the RAG eval over the golden set. Measured; results below.
 
 ## Method
 
@@ -31,7 +35,7 @@ python scripts/loadtest.py --key sk-local-... --model qwen2.5:0.5b \
     --concurrency 1,8,32 --requests 64 --max-tokens 128 --json results.json
 ```
 
-Report with every table: CPU/GPU model, RAM/VRAM, OS, inference server and version, model and
+Every published table states: CPU/GPU model, RAM/VRAM, OS, inference server and version, model and
 quantization, `--max-tokens`, prompt, requests per level, and whether client and server share a host.
 
 ### Results template (model serving)
@@ -42,20 +46,20 @@ quantization, `--max-tokens`, prompt, requests per level, and whether client and
 | | | | 8 | | | | | | |
 | | | | 32 | | | | | | |
 
-A CPU run with Ollama and `qwen2.5:0.5b` was planned for v0.5.0 but could not be done in the build
-environment: its network policy blocked the Ollama model registry and Hugging Face, so no model weights
-could be downloaded. No model numbers are claimed anywhere in this repository.
+A CPU run with Ollama and `qwen2.5:0.5b` was planned for v0.5.0 but could not be done in the build environment:
+its network policy blocked the Ollama model registry and Hugging Face, so no model weights could be downloaded.
+No model numbers are claimed anywhere in this repository.
 
 ## Gateway overhead (measured)
 
-**Setup.** `scripts/mock_openai_server.py` (an OpenAI-compatible stub that streams 64 fixed tokens
-with no delay; it is not a model) as the upstream, the gateway with `BACKEND=openai_compatible`,
-and `scripts/loadtest.py`, all on one host:
+**Setup.** `scripts/mock_openai_server.py` (an OpenAI-compatible stub that streams 64 fixed tokens with no
+delay; it is not a model) as the upstream, the gateway with `BACKEND=openai_compatible`, and
+`scripts/loadtest.py`, all on one host:
 
 - Host: Linux VM (kernel 6.18), 2 vCPUs (Intel Xeon @ 2.80 GHz), 7 GiB RAM, no GPU
 - Python 3.13, uvicorn 0.53 (one worker), FastAPI 0.142, httpx 0.28
 - Streaming, `max_tokens=64`, 300 requests per level after 5 warm-up requests, 0 errors in all runs
-- Client, gateway and stub share the 2 vCPUs, so these are conservative
+- Client, gateway and stub share the 2 vCPUs, so these numbers are conservative
 
 | Path | Concurrency | RPS | Latency p50 / p95 / p99 (ms) | TTFT p50 / p95 (ms) |
 |---|---:|---:|---|---|
@@ -68,17 +72,16 @@ and `scripts/loadtest.py`, all on one host:
 
 A second gateway run gave 92 / 113 / 112 RPS at concurrency 1 / 8 / 32 (p50 10.1 / 67.5 / 288.7 ms).
 
-**Reading it.** At concurrency 1 the gateway adds roughly 6 ms at p50 to a 64-token streamed request.
-A single uvicorn worker on this 2-vCPU host saturates at about 100–110 requests/s, after which extra
-concurrency turns into queueing. These numbers bound the gateway only; whether the gateway or the
-inference server is the limit for a given deployment has to be measured with a real model (method
-above). Scaling the gateway past one process needs a shared rate-limit store; see Failure modes in
-the README.
+**Interpretation.** At concurrency 1 the gateway adds roughly 6 ms at p50 to a 64-token streamed request. A
+single uvicorn worker on this 2-vCPU host levels off at 92–113 requests/s across the two runs, after which extra concurrency
+turns into queueing. These numbers bound the gateway only; whether the gateway or the inference server is the
+limit for a given deployment has to be measured with a real model (method above). Scaling the gateway past one
+process needs a shared rate-limit store; see the failure modes in [operations.md](operations.md#failure-modes).
 
 **Bottleneck found and fixed during this measurement.** Up to v0.4 the gateway built a new
-`httpx.AsyncClient` for every upstream call. Creating a client builds an SSL context and loads the CA
-bundle, which took about 48 ms of blocking CPU on this host. Measured with the same setup
-(200 requests per level):
+`httpx.AsyncClient` for every upstream call. Creating a client builds an SSL context and loads the CA bundle,
+which took about 48 ms of blocking CPU on this host. Same setup; the 0.4 row is a 200-requests-per-level run,
+the 0.5 row repeats the 300-request run above:
 
 | Version | Concurrency 1: RPS, p50 | Concurrency 8: RPS, p50 | Concurrency 32: RPS, p50 |
 |---|---|---|---|
@@ -86,10 +89,10 @@ bundle, which took about 48 ms of blocking CPU on this host. Measured with the s
 | Pooled client per event loop (0.5) | 102 RPS, 9.2 ms | 112 RPS, 68.2 ms | 106 RPS, 293 ms |
 
 The fix is in `gateway/backends.py` (`_client()`), with a regression test
-(`test_upstream_http_client_is_pooled_not_rebuilt_per_request`). In 0.5 the gateway also stops logging
-every upstream request at INFO.
+(`test_upstream_http_client_is_pooled_not_rebuilt_per_request`). In 0.5 the gateway also stops logging every
+upstream request at INFO.
 
-**Reproduce.**
+**Reproduction.**
 
 ```bash
 MOCK_TOKENS=64 uvicorn scripts.mock_openai_server:app --port 8001 &
@@ -102,10 +105,10 @@ python scripts/loadtest.py --url http://127.0.0.1:8001 --key x --model mock-mode
 
 ## Retrieval quality (measured, golden set)
 
-`python scripts/rag_eval.py` (runs in about 1.5 s on the build host; CI runs it with `--check`). Same
-caveats as [ADR 0006](adr/0006-hybrid-retrieval-and-rag-evals.md): demo hashed bag-of-words embedder (not
-a neural model), extractive answerer (no LLM), a small golden set written by one author. A regression
-baseline for the retrieval pipeline, not a statement about answer quality in production.
+`python scripts/rag_eval.py` (runs in about 1.5 s on the build host; CI runs it with `--check`). Same caveats
+as [ADR 0006](adr/0006-hybrid-retrieval-and-rag-evals.md): demo hashed bag-of-words embedder (not a neural
+model), extractive answerer (no LLM), a small golden set written by one author. A regression baseline for the
+retrieval pipeline, not a statement about answer quality in production.
 
 Golden set: 12 fictional documents (2 restricted), 43 questions, k=4. Embedder: demo hashed bag-of-words (512-d), not a neural model. Answers: demo extractive (no LLM).
 
@@ -115,3 +118,9 @@ Golden set: 12 fictional documents (2 restricted), 43 questions, k=4. Embedder: 
 | `bm25+none` | 1.000 | 1.000 | 1.000 | 0.907 | 0.977 | 0 |
 | `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
 | `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |
+
+## Storage and encryption cost (measured)
+
+The cost of encryption at rest and the time to back up and restore a synthetic 3,883-passage collection are
+measured with `scripts/bench_storage.py` and reported, with their setup, in
+[operations.md](operations.md#encryption-at-rest).

@@ -1,15 +1,18 @@
 # Threat model
 
-Scope: the gateway (`gateway/`), its admin page (`admin-ui/`), its data at rest (SQLite file,
-`audit.jsonl`), and its connection to the inference server (Ollama or an OpenAI-compatible server).
-Out of scope: the host OS, the inference server's own security, network perimeter and TLS
-termination, and the browser demo (which has no server and no data of its own). The Helm chart's
-NetworkPolicy and pod hardening reduce the cluster attack surface but were validated by rendering in
-tests, not on a live cluster ([kubernetes.md](kubernetes.md)).
+This document identifies the platform's trust boundaries and assets, then analyses threats with STRIDE and
+the OWASP Top 10 for LLM Applications (2025). Each threat is paired with its control, the enforcement point in
+code, the test that produces evidence, and the residual risk that remains.
 
-Every control below points at code and at the test that exercises it. "Residual risk" is what is left
-after the control; items marked **roadmap** are not implemented. Related: [controls mapping](controls.md),
-[compliance notes](compliance.md), [ADRs](adr/README.md).
+**Scope:** the gateway (`gateway/`), its admin page (`admin-ui/`), its data at rest (SQLite file,
+`audit.jsonl`), and its connection to the inference server (Ollama or an OpenAI-compatible server).
+**Out of scope:** the host OS, the inference server's own security, network perimeter and TLS termination, and
+the browser demo (which has no server and no data of its own). The Helm chart's NetworkPolicy and pod hardening
+reduce the cluster attack surface but were validated by rendering in tests, not on a live cluster
+([kubernetes.md](kubernetes.md)).
+
+"Residual risk" is what remains after the control; items marked **roadmap** are not implemented. Related:
+[controls mapping](controls.md), [compliance notes](compliance.md), [ADRs](adr/README.md).
 
 ## System and trust boundaries
 
@@ -44,7 +47,7 @@ shared model.
 | **T**ampering with the audit trail | Editing or deleting a line in `audit.jsonl` | SHA-256 hash chain; `GET /admin/audit/verify` returns the first bad line (ADR 0003) | `test_gateway.py::test_audit_verify_detects_tampering`; `test_demo_engine.py::test_tampering_is_detected_and_the_tail_limitation_is_reported` | The newest entries can be rewritten with recomputed hashes undetected until compared with a WORM archive; no signed checkpoints (**roadmap**) |
 | Tampering with stored passages | Editing or swapping encrypted passages in the SQLite file | AES-GCM authentication with associated data naming document, passage and field; decryption failure fails closed | `test_encryption.py::test_ciphertexts_are_bound_to_their_row_and_key` | Only when encryption is on; plaintext deployments don't detect direct edits |
 | Tampering with documents | Replacing a policy so answers change, or widening its access list | Only admins add/remove documents and change access lists; `document_added` (with its ACL), `document_removed`, `document_acl_changed` and `collection_acl_changed` (before/after) audited with the actor | `test_documents.py::test_only_admins_add_or_remove_documents` | Anyone with write access to the SQLite file can edit passages directly; not detected (**roadmap**: content hashes in the audit entry) |
-| Tampering with models | A swapped, re-pulled or malicious model | Pulls admin-only and audited; pinned digests in a lock file verified against what the backend serves (Ollama manifest digest, or SHA-256 of weight files) at startup, after pulls, on demand and every interval; `enforce` refuses unpinned or mismatched models (ADR 0008) | `test_supply_chain.py::test_enforce_serves_only_pinned_models_whose_digest_matches`, `::test_digests_are_rechecked_after_the_interval_and_after_pulls`, `::test_openai_compatible_models_are_verified_by_hashing_pinned_weight_files` | Digests prove integrity against *your* pin, not provenance (no signature verification, **roadmap**); pins are trust on first use; weight files are re-hashed only at startup, after pulls and on demand |
+| Tampering with models | A swapped, re-pulled or malicious model | Pulls admin-only and audited; pinned digests in a lock file verified against what the backend serves (Ollama manifest digest, or SHA-256 of weight files) at startup, after pulls, on demand and every interval; `enforce` refuses unpinned or mismatched models (ADR 0008) | `test_supply_chain.py::test_enforce_serves_only_pinned_models_whose_digest_matches`, `::test_digests_are_rechecked_after_the_interval_and_after_pulls`, `::test_openai_compatible_models_are_verified_by_hashing_pinned_weight_files` | Digests prove integrity against the deployer's *own* pin, not provenance (no signature verification, **roadmap**); pins are trust on first use; weight files are re-hashed only at startup, after pulls and on demand |
 | **R**epudiation | "We never created that key / asked that question" | Key creation/revocation, document changes and every document question are logged with the key label; prompts optionally | `test_gateway.py::test_audit_log_records_admin_actions_and_redacted_prompts`; `test_documents.py::test_questions_are_audited_with_sources_and_redaction` | Key callers are attributed to a key label; token callers to `user:<username>` (`test_identity.py::test_admin_api_respects_roles_and_audits_the_user`). Plain chat completions are only logged when `GATEWAY_LOG_PROMPTS=true` |
 | **I**nformation disclosure: logs | PHI/PII copied into the audit log | Prompt logging is off by default; `GATEWAY_REDACT_PROMPTS` masks SSNs, Luhn-valid cards, DOBs, emails, US phones; full keys never logged | `test_gateway.py::test_audit_log_records_admin_actions_and_redacted_prompts`; `test_redact.py` | Pattern-based, not a DLP: names, addresses, MRNs and free-text PHI are not redacted |
 | Information disclosure: data at rest | Copy of `gateway.db`, a backup, or `audit.jsonl` | Envelope encryption (AES-256-GCM, per-document data keys wrapped by a rotatable KEK) of passages and vectors; optional sealing of audit free-text fields; keys never in backups; restore checks key availability (ADR 0007, `gateway/crypto.py`) | `test_encryption.py::test_passages_and_vectors_are_sealed_on_disk_and_readable_through_the_api`, `::test_audit_text_fields_are_sealed_and_the_chain_verifies_without_keys`; `test_backup_restore.py::test_backup_restore_drill_brings_back_documents_keys_acls_and_the_audit_chain` | Off by default. **API keys are stored in plaintext**; titles, ACLs and sizes are readable; a keyring stored next to the database or backups defeats the encryption; backups taken before enabling it keep plaintext. Only a local keyring ships (KMS is **roadmap**); use full-disk encryption as well |
