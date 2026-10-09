@@ -9,6 +9,6 @@ pypdf>=4.0
 python-multipart>=0.0.9
 prometheus-client>=0.20
 PyJWT>=2.8
-cryptography>=42
+cryptography>=50.0.2
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
