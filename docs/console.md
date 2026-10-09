@@ -28,16 +28,25 @@ eval. Nothing leaves the page. There is no LLM in the browser; answers are extra
 ## Sample business: Cypress Harbor Credit Union
 
 The console is set in a sample business so that the platform can be assessed the way an institution would use
-it. **Cypress Harbor Credit Union** is *fictional*: 340 employees in 10 departments, 11 branches, and one
-on-prem GPU server. The console opens on **Harbor Assistant**, the employee-facing chat, following the pattern
+it. **Cypress Harbor Credit Union** is *fictional*: 340 employees in 11 departments, 11 branches in South
+Florida, and one on-prem GPU server. The console opens on **Harbor Assistant**, the employee-facing chat, following the pattern
 of an internal Copilot-style assistant; administration and governance sit behind it in the sidebar.
 
-- **Library**: 57 documents in five collections (staff policies, member services, lending, compliance, branch
-  operations), each with an owner, department, version and review date. 44 come from
-  [`scripts/sample_library.py`](../scripts/sample_library.py) (seeded, checked in CI). HR compensation, the
-  engineering payments runbook, the BSA procedure and OFAC screening are restricted by access list.
-- **People**: Priya Shah (HR), Dana Ortiz (engineering), Marcus Bell (BSA compliance), Audrey Kim (internal
-  audit) and a branch lobby kiosk. API keys and the bootstrap admin appear in the technical view.
+- **Library**: 59 documents in six collections (staff policies, member information, member services, lending,
+  compliance, branch operations), each with an owner, department, version and review date (all within 12 months
+  of the usage period). 46 come from [`scripts/sample_library.py`](../scripts/sample_library.py), which is also
+  the single source for the department list, document owners and access rules (checked in CI). Member
+  information (fees, hours, rates, how to join) is written for members and is readable by `group:public` and
+  `group:staff`; every other collection is `group:staff` only. HR compensation (`group:hr`), the payments
+  on-call runbook (`group:engineering`) and the BSA/AML escalation procedure (`group:compliance`) are restricted
+  by document access list; front-line staff refer unusual activity under an all-staff referral policy.
+- **People**: Priya Shah (Human resources), Dana Ortiz (IT and digital banking), Marcus Bell (Compliance and
+  BSA, the BSA officer), Audrey Kim (Internal audit: `reader:*`, read-only across every collection, restricted
+  documents still hidden, no free-form chat) and the branch lobby kiosk (an API key in `group:public`, so it
+  reads Member information only). Suggested questions per person come from `demo/engine.py` and each is tested
+  to cite the document it demonstrates; Audrey's salary-band suggestion is labelled as a refusal. The demo also
+  creates two API keys: `member-faq-portal` (`group:public`) and `staff-intranet-search` (`group:staff`). API
+  keys and the bootstrap admin appear in the technical view.
 - **Usage**: 90 days from [`scripts/generate_sample_company.py`](../scripts/generate_sample_company.py),
   labelled **sample** everywhere, apart from **measured** results (Answer quality, Benchmarks) and the
   **simulated** requests made in the tab.
@@ -56,7 +65,7 @@ dark themes follow the system and can be switched in the header.
 runs per collection before any passage is scored; passages are then ranked together. An answer quotes only
 sentences from its best-matching document. A question that nothing in the library answers well receives
 "I couldn't find that in the documents you can access" instead of an unrelated quote. This is a relevance
-floor on vector similarity, applied in the console only and not in the eval.
+floor on vector similarity; the eval applies the same rule and reports how often it declines when it should.
 
 ## Navigation
 
@@ -78,7 +87,7 @@ and a collapsible sidebar. A five-step guided tour runs on the first visit.
 | Audit log | The hash-chained log with readable event names, filters, search and paging; each row opens a decision timeline (sign-in, access decision, retrieval, sources, answer, hashes). "Log intact" check; demo mode adds a tamper-detection test |
 | Access policy | The policy in effect, in plain language, then the runtime policy as JSON, validated with the gateway's own types and `identity.check_role`, applied and audited, with a "try a change" scenario before and after |
 | Models | Backend health, served models, off/warn/enforce policy; the technical view adds digests, lock-file verification and validation, and ML-BOM model components |
-| Answer quality | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json` (measured on the benchmark library), and the questions not answered perfectly; demo mode re-runs the eval in the browser and compares |
+| Answer quality | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json`, measured on the Cypress Harbor library itself with 59 questions asked as the five people (including questions to decline), and the questions not answered perfectly with who asked them; demo mode re-runs the eval in the browser and compares |
 | Settings | Mode, credential (live), modules running in the tab (technical view), and what is simulated |
 
 ## Running the console against the gateway
@@ -91,7 +100,8 @@ docker compose logs gateway | grep "Bootstrap admin"     # the admin key to past
 That stack needs no model or GPU. The gateway talks to `mock-llm`, which is
 [`scripts/mock_openai_server.py`](../scripts/mock_openai_server.py) in **simulated** mode (extractive answers,
 hashed embeddings; not a language model). *Load sample data* on Usage and impact › This session adds the sample
-library and the keys through the API.
+library, each collection's access list and three keys (`hr-assistant` and `eng-assistant` in `group:staff`,
+`lobby-kiosk` in `group:public`) through the API.
 
 For real answers, Ollama remains the default backend:
 `docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`, then pull `llama3.1:8b` and

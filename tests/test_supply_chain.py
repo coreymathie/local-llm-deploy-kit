@@ -99,7 +99,7 @@ def test_enforce_covers_embeddings_ingestion_and_document_questions(client, olla
     monkeypatch.setattr(settings, "GATEWAY_MODEL_POLICY", "enforce")
     key = {"Authorization": f"Bearer {new_key(client)}"}
     # GATEWAY_EMBED_MODEL is "nomic-embed-text"; Ollama serves it as "nomic-embed-text:latest" (pinned).
-    doc = {"title": "a.md", "text": "Hotel cap is $210 per night."}
+    doc = {"title": "a.md", "text": "Hotel cap is $180 per night."}
     assert client.post("/v1/collections/p/documents/text", json=doc, headers=ADMIN).status_code == 201
     assert client.post("/v1/embeddings", json={"input": "x"}, headers=key).status_code == 200
     assert client.post("/v1/embeddings", json={"input": "x", "model": "qwen2.5:14b"}, headers=key).status_code == 403

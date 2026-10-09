@@ -3,74 +3,196 @@
   "measured": true,
   "report": {
     "k": 4,
-    "questions": 43,
-    "documents": 12,
-    "restricted_documents": 2,
+    "questions": 59,
+    "answerable": 50,
+    "declines": 9,
+    "documents": 59,
+    "collections": 6,
+    "restricted_documents": 3,
+    "personas": [
+      "audrey",
+      "dana",
+      "kiosk",
+      "marcus",
+      "priya"
+    ],
     "embedder": "demo hashed bag-of-words (512-d), not a neural model",
-    "answerer": "demo extractive (no LLM)",
+    "answerer": "demo extractive (no LLM), with the console's relevance floor",
     "results": {
       "vector+none": {
         "mode": "vector",
         "reranker": "none",
-        "recall@1": 0.907,
-        "recall@4": 0.9767,
-        "mrr": 0.9419,
-        "citation_accuracy": 0.907,
-        "answer_contains": 0.9535,
+        "recall@1": 0.8,
+        "recall@4": 0.96,
+        "mrr": 0.8717,
+        "citation_accuracy": 0.86,
+        "answer_contains": 0.84,
+        "decline_accuracy": 0.2222,
         "acl_leaks": 0,
         "failures": [
           {
-            "id": "q02",
+            "id": "p01",
+            "rank": 2,
+            "cited": [
+              "paid-time-off-and-leave.md"
+            ],
+            "contains": true
+          },
+          {
+            "id": "p02",
+            "rank": 2,
+            "cited": [
+              "sample-remote-work-policy.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "p03",
+            "rank": 3,
+            "cited": [
+              "paid-time-off-and-leave.md"
+            ],
+            "contains": true
+          },
+          {
+            "id": "p04",
+            "rank": 1,
+            "cited": [
+              "holiday-calendar-2026.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "p05",
             "rank": 0,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "incident-response-policy.md",
-              "onboarding-guide.md"
+              "sample-data-retention-policy.md"
             ],
             "contains": false
           },
           {
-            "id": "q10",
-            "rank": 1,
+            "id": "p08",
+            "rank": 4,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "travel-policy.md"
+              "sample-remote-work-policy.md",
+              "sample-travel-expense-policy.md"
             ],
             "contains": true
           },
           {
-            "id": "q25",
+            "id": "p09",
+            "rank": 2,
+            "cited": [
+              "sample-travel-expense-policy.md"
+            ],
+            "contains": true
+          },
+          {
+            "id": "m08",
+            "rank": 2,
+            "cited": [],
+            "contains": false
+          },
+          {
+            "id": "s05",
             "rank": 1,
             "cited": [
-              "data-classification-policy.md"
+              "privacy-and-glba-notice-procedure.md",
+              "sample-member-identity-verification.md"
             ],
             "contains": false
           },
           {
-            "id": "q34",
+            "id": "l06",
+            "rank": 1,
+            "cited": [
+              "indirect-lending-dealer-standards.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "c01",
             "rank": 2,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "it-security-policy.md"
+              "cash-handling-limits.md",
+              "unusual-activity-referral.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "c06",
+            "rank": 2,
+            "cited": [
+              "regulatory-exam-preparation.md"
             ],
             "contains": true
           },
           {
-            "id": "q38",
-            "rank": 2,
+            "id": "b03",
+            "rank": 0,
             "cited": [
-              "onboarding-guide.md"
+              "sample-branch-security-procedures.md",
+              "sample-travel-expense-policy.md"
             ],
-            "contains": true
+            "contains": false
           },
           {
-            "id": "q40",
-            "rank": 2,
+            "id": "d01",
+            "rank": 0,
             "cited": [
               "benefits-overview.md",
-              "onboarding-guide.md"
+              "credit-card-limit-guidelines.md"
             ],
-            "contains": true
+            "declined": false
+          },
+          {
+            "id": "d02",
+            "rank": 0,
+            "cited": [
+              "sample-wire-transfer-verification.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d03",
+            "rank": 0,
+            "cited": [
+              "ofac-screening-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d04",
+            "rank": 0,
+            "cited": [
+              "account-opening-checklist.md",
+              "ofac-screening-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d06",
+            "rank": 0,
+            "cited": [
+              "mobile-deposit.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d08",
+            "rank": 0,
+            "cited": [
+              "business-continuity-plan-summary.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d09",
+            "rank": 0,
+            "cited": [
+              "sample-branch-security-procedures.md"
+            ],
+            "declined": false
           }
         ]
       },
@@ -80,405 +202,859 @@
         "recall@1": 1.0,
         "recall@4": 1.0,
         "mrr": 1.0,
-        "citation_accuracy": 0.907,
-        "answer_contains": 0.9767,
+        "citation_accuracy": 0.9,
+        "answer_contains": 0.86,
+        "decline_accuracy": 0.1111,
         "acl_leaks": 0,
         "failures": [
           {
-            "id": "q02",
+            "id": "p02",
             "rank": 1,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "it-security-policy.md",
-              "remote-work-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q08",
-            "rank": 1,
-            "cited": [
-              "remote-work-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q10",
-            "rank": 1,
-            "cited": [
-              "expense-reimbursement-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q25",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md"
+              "benefits-overview.md",
+              "sample-remote-work-policy.md"
             ],
             "contains": false
           },
           {
-            "id": "q34",
+            "id": "p04",
             "rank": 1,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "remote-work-policy.md"
+              "holiday-calendar-2026.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "p05",
+            "rank": 1,
+            "cited": [
+              "password-and-mfa-standard.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "m08",
+            "rank": 1,
+            "cited": [
+              "mobile-deposit.md",
+              "savings-and-certificate-rates.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "s05",
+            "rank": 1,
+            "cited": [
+              "privacy-and-glba-notice-procedure.md",
+              "sample-member-identity-verification.md"
             ],
             "contains": true
+          },
+          {
+            "id": "l04",
+            "rank": 1,
+            "cited": [
+              "hardship-and-payment-deferral.md",
+              "heloc-product-guide.md"
+            ],
+            "contains": true
+          },
+          {
+            "id": "l06",
+            "rank": 1,
+            "cited": [
+              "indirect-lending-dealer-standards.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "c01",
+            "rank": 1,
+            "cited": [
+              "unusual-activity-referral.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "b03",
+            "rank": 1,
+            "cited": [
+              "robbery-response-procedure.md",
+              "sample-branch-security-procedures.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "d01",
+            "rank": 0,
+            "cited": [
+              "benefits-overview.md",
+              "credit-card-limit-guidelines.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d02",
+            "rank": 0,
+            "cited": [
+              "sample-wire-transfer-verification.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d03",
+            "rank": 0,
+            "cited": [
+              "early-stage-collections.md",
+              "ofac-screening-procedure.md",
+              "small-business-lending-overview.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d04",
+            "rank": 0,
+            "cited": [
+              "account-opening-checklist.md",
+              "ofac-screening-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d06",
+            "rank": 0,
+            "cited": [
+              "mobile-deposit.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d07",
+            "rank": 0,
+            "cited": [
+              "ofac-screening-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d08",
+            "rank": 0,
+            "cited": [
+              "business-continuity-plan-summary.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d09",
+            "rank": 0,
+            "cited": [
+              "sample-branch-security-procedures.md"
+            ],
+            "declined": false
           }
         ]
       },
       "hybrid+none": {
         "mode": "hybrid",
         "reranker": "none",
-        "recall@1": 0.9535,
+        "recall@1": 0.88,
         "recall@4": 1.0,
-        "mrr": 0.9767,
-        "citation_accuracy": 0.8837,
-        "answer_contains": 0.9767,
+        "mrr": 0.94,
+        "citation_accuracy": 0.92,
+        "answer_contains": 0.84,
+        "decline_accuracy": 0.2222,
         "acl_leaks": 0,
         "failures": [
           {
-            "id": "q02",
+            "id": "p02",
             "rank": 2,
             "cited": [
-              "it-security-policy.md",
-              "onboarding-guide.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q08",
-            "rank": 1,
-            "cited": [
-              "remote-work-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q10",
-            "rank": 1,
-            "cited": [
-              "expense-reimbursement-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q25",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md"
+              "benefits-overview.md",
+              "sample-remote-work-policy.md"
             ],
             "contains": false
           },
           {
-            "id": "q34",
+            "id": "p04",
             "rank": 1,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "remote-work-policy.md"
+              "holiday-calendar-2026.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "p05",
+            "rank": 2,
+            "cited": [
+              "password-and-mfa-standard.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "p08",
+            "rank": 2,
+            "cited": [
+              "sample-remote-work-policy.md"
             ],
             "contains": true
           },
           {
-            "id": "q40",
+            "id": "m08",
+            "rank": 2,
+            "cited": [],
+            "contains": false
+          },
+          {
+            "id": "s05",
+            "rank": 1,
+            "cited": [
+              "privacy-and-glba-notice-procedure.md",
+              "sample-member-identity-verification.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "l06",
+            "rank": 1,
+            "cited": [
+              "indirect-lending-dealer-standards.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "c01",
             "rank": 2,
             "cited": [
-              "benefits-overview.md",
-              "onboarding-guide.md"
+              "unusual-activity-referral.md"
             ],
-            "contains": true
+            "contains": false
+          },
+          {
+            "id": "b03",
+            "rank": 2,
+            "cited": [
+              "sample-branch-security-procedures.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "d01",
+            "rank": 0,
+            "cited": [
+              "benefits-overview.md",
+              "credit-card-limit-guidelines.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d02",
+            "rank": 0,
+            "cited": [
+              "sample-wire-transfer-verification.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d03",
+            "rank": 0,
+            "cited": [
+              "ofac-screening-procedure.md",
+              "sample-card-dispute-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d04",
+            "rank": 0,
+            "cited": [
+              "account-opening-checklist.md",
+              "ofac-screening-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d06",
+            "rank": 0,
+            "cited": [
+              "mobile-deposit.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d08",
+            "rank": 0,
+            "cited": [
+              "business-continuity-plan-summary.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d09",
+            "rank": 0,
+            "cited": [
+              "benefits-overview.md",
+              "sample-branch-security-procedures.md"
+            ],
+            "declined": false
           }
         ]
       },
       "hybrid+lexical": {
         "mode": "hybrid",
         "reranker": "lexical",
-        "recall@1": 1.0,
+        "recall@1": 0.96,
         "recall@4": 1.0,
-        "mrr": 1.0,
-        "citation_accuracy": 0.907,
-        "answer_contains": 0.9535,
+        "mrr": 0.975,
+        "citation_accuracy": 0.88,
+        "answer_contains": 0.86,
+        "decline_accuracy": 0.2222,
         "acl_leaks": 0,
         "failures": [
           {
-            "id": "q02",
+            "id": "p02",
             "rank": 1,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "onboarding-guide.md",
-              "remote-work-policy.md"
+              "benefits-overview.md",
+              "sample-remote-work-policy.md"
+            ],
+            "contains": true
+          },
+          {
+            "id": "p04",
+            "rank": 1,
+            "cited": [
+              "holiday-calendar-2026.md"
             ],
             "contains": false
           },
           {
-            "id": "q08",
-            "rank": 1,
+            "id": "p05",
+            "rank": 4,
             "cited": [
-              "remote-work-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q10",
-            "rank": 1,
-            "cited": [
-              "expense-reimbursement-policy.md",
-              "travel-policy.md"
-            ],
-            "contains": true
-          },
-          {
-            "id": "q25",
-            "rank": 1,
-            "cited": [
-              "data-classification-policy.md"
+              "password-and-mfa-standard.md"
             ],
             "contains": false
           },
           {
-            "id": "q34",
+            "id": "p07",
             "rank": 1,
             "cited": [
-              "expense-reimbursement-policy.md",
-              "remote-work-policy.md"
+              "business-continuity-plan-summary.md",
+              "overdraft-courtesy-pay.md"
             ],
             "contains": true
+          },
+          {
+            "id": "m08",
+            "rank": 2,
+            "cited": [],
+            "contains": false
+          },
+          {
+            "id": "s05",
+            "rank": 1,
+            "cited": [
+              "privacy-and-glba-notice-procedure.md",
+              "sample-member-identity-verification.md"
+            ],
+            "contains": true
+          },
+          {
+            "id": "l04",
+            "rank": 1,
+            "cited": [
+              "hardship-and-payment-deferral.md",
+              "heloc-product-guide.md",
+              "hurricane-preparedness.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "l06",
+            "rank": 1,
+            "cited": [
+              "indirect-lending-dealer-standards.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "c01",
+            "rank": 1,
+            "cited": [
+              "unusual-activity-referral.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "b03",
+            "rank": 1,
+            "cited": [
+              "robbery-response-procedure.md",
+              "sample-branch-security-procedures.md"
+            ],
+            "contains": false
+          },
+          {
+            "id": "d01",
+            "rank": 0,
+            "cited": [
+              "benefits-overview.md",
+              "credit-card-limit-guidelines.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d02",
+            "rank": 0,
+            "cited": [
+              "sample-wire-transfer-verification.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d03",
+            "rank": 0,
+            "cited": [
+              "ofac-screening-procedure.md",
+              "sample-card-dispute-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d04",
+            "rank": 0,
+            "cited": [
+              "account-opening-checklist.md",
+              "ofac-screening-procedure.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d06",
+            "rank": 0,
+            "cited": [
+              "mobile-deposit.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d08",
+            "rank": 0,
+            "cited": [
+              "business-continuity-plan-summary.md"
+            ],
+            "declined": false
+          },
+          {
+            "id": "d09",
+            "rank": 0,
+            "cited": [
+              "sample-branch-security-procedures.md"
+            ],
+            "declined": false
           }
         ]
       }
     }
   },
   "thresholds": {
-    "_comment": "Regression gates for scripts/rag_eval.py --check (k=4, demo embedder, bundled golden set). Set just under the values measured when they were introduced; raise them when retrieval improves, never lower them to make a change pass.",
+    "_comment": "Regression gates for scripts/rag_eval.py --check (k=4, demo embedder and extractive answerer, Cypress Harbor sample library, evals/golden/questions.jsonl). Each minimum is one point below the value measured when the credit-union golden set was introduced, rounded down. Raise them when retrieval or answering improves; never lower them to make a change pass. ACL leaks are a hard gate at 0.",
     "max_acl_leaks": 0,
     "configs": {
       "vector+none": {
-        "recall@1": 0.88,
+        "recall@1": 0.79,
         "recall@4": 0.95,
-        "mrr": 0.92,
-        "citation_accuracy": 0.86,
-        "answer_contains": 0.93
+        "mrr": 0.86,
+        "citation_accuracy": 0.85,
+        "answer_contains": 0.83,
+        "decline_accuracy": 0.21
       },
       "bm25+none": {
-        "recall@1": 0.97,
-        "recall@4": 0.97,
-        "mrr": 0.97,
-        "citation_accuracy": 0.81,
-        "answer_contains": 0.95
+        "recall@1": 0.99,
+        "recall@4": 0.99,
+        "mrr": 0.99,
+        "citation_accuracy": 0.89,
+        "answer_contains": 0.85,
+        "decline_accuracy": 0.1
       },
       "hybrid+none": {
-        "recall@1": 0.93,
-        "recall@4": 0.97,
-        "mrr": 0.95,
-        "citation_accuracy": 0.81,
-        "answer_contains": 0.95
+        "recall@1": 0.87,
+        "recall@4": 0.99,
+        "mrr": 0.93,
+        "citation_accuracy": 0.91,
+        "answer_contains": 0.83,
+        "decline_accuracy": 0.21
       },
       "hybrid+lexical": {
-        "recall@1": 0.97,
-        "recall@4": 0.97,
-        "mrr": 0.97,
-        "citation_accuracy": 0.81,
-        "answer_contains": 0.93
+        "recall@1": 0.95,
+        "recall@4": 0.99,
+        "mrr": 0.96,
+        "citation_accuracy": 0.87,
+        "answer_contains": 0.85,
+        "decline_accuracy": 0.21
       }
     }
   },
   "problems": [],
   "questions": {
-    "q01": {
-      "question": "How long does a password have to be?",
-      "doc": "it-security-policy.md"
+    "p01": {
+      "question": "I'm in my second year here. How much PTO do I get a year?",
+      "doc": "paid-time-off-and-leave.md",
+      "persona": "priya"
     },
-    "q02": {
-      "question": "Is MFA required for the VPN?",
-      "doc": "it-security-policy.md"
+    "p02": {
+      "question": "Does the credit union match retirement contributions, and by how much?",
+      "doc": "benefits-overview.md",
+      "persona": "dana"
     },
-    "q03": {
-      "question": "After how many minutes of inactivity do laptops lock?",
-      "doc": "it-security-policy.md"
+    "p03": {
+      "question": "Can I carry unused vacation days into January?",
+      "doc": "paid-time-off-and-leave.md",
+      "persona": "dana"
     },
-    "q04": {
-      "question": "My phone was stolen. How quickly do I need to report it?",
-      "doc": "it-security-policy.md"
+    "p04": {
+      "question": "Which holidays are we closed for?",
+      "doc": "holiday-calendar-2026.md",
+      "persona": "priya"
     },
-    "q05": {
-      "question": "What should I do with a suspicious email?",
-      "doc": "it-security-policy.md"
+    "p05": {
+      "question": "My account got locked after too many bad sign-ins. How do I get it unlocked?",
+      "doc": "password-and-mfa-standard.md",
+      "persona": "dana"
     },
-    "q06": {
-      "question": "How often are phishing simulations run?",
-      "doc": "it-security-policy.md"
+    "p06": {
+      "question": "Where do I report a phishing email?",
+      "doc": "phishing-and-incident-reporting.md",
+      "persona": "priya"
     },
-    "q07": {
-      "question": "Can I fly business class on a long flight?",
-      "doc": "travel-policy.md"
+    "p07": {
+      "question": "What is the recovery time target for core banking after a disaster?",
+      "doc": "business-continuity-plan-summary.md",
+      "persona": "audrey"
     },
-    "q08": {
-      "question": "What is the nightly hotel limit?",
-      "doc": "travel-policy.md"
+    "p08": {
+      "question": "How many days a week can I work from home?",
+      "doc": "sample-remote-work-policy.md",
+      "persona": "priya"
     },
-    "q09": {
-      "question": "What class of rental car may I book?",
-      "doc": "travel-policy.md"
+    "p09": {
+      "question": "What is the daily meal allowance on a business trip?",
+      "doc": "sample-travel-expense-policy.md",
+      "persona": "marcus"
     },
-    "q10": {
-      "question": "How much is the daily meal allowance when traveling?",
-      "doc": "travel-policy.md"
+    "p10": {
+      "question": "Am I allowed to paste a member's account number into a public chatbot?",
+      "doc": "sample-ai-acceptable-use-policy.md",
+      "persona": "audrey"
     },
-    "q11": {
-      "question": "How far ahead should trips be booked?",
-      "doc": "travel-policy.md"
+    "p11": {
+      "question": "What does a level 2 position pay?",
+      "doc": "restricted-hr-compensation-bands.md",
+      "persona": "priya"
     },
-    "q12": {
-      "question": "Should I take the train for short trips?",
-      "doc": "travel-policy.md"
+    "p12": {
+      "question": "How long do just-in-time production database credentials last?",
+      "doc": "restricted-payments-oncall-runbook.md",
+      "persona": "dana"
     },
-    "q13": {
-      "question": "How many weeks of paid leave does a primary caregiver get?",
-      "doc": "parental-leave-policy.md"
+    "m01": {
+      "question": "I work in Palm Beach County but live in another county. Can I still join?",
+      "doc": "how-to-become-a-member.md",
+      "persona": "kiosk"
     },
-    "q14": {
-      "question": "How much leave do secondary caregivers receive?",
-      "doc": "parental-leave-policy.md"
+    "m02": {
+      "question": "Is there a monthly fee on a checking account?",
+      "doc": "fee-schedule.md",
+      "persona": "kiosk"
     },
-    "q15": {
-      "question": "When do I become eligible for parental leave?",
-      "doc": "parental-leave-policy.md"
+    "m03": {
+      "question": "How much does it cost to send money overseas by wire?",
+      "doc": "fee-schedule.md",
+      "persona": "kiosk"
     },
-    "q16": {
-      "question": "Is there a phased return after parental leave?",
-      "doc": "parental-leave-policy.md"
+    "m04": {
+      "question": "Is the Weston branch open late on weekdays?",
+      "doc": "branch-hours-and-holidays.md",
+      "persona": "kiosk"
     },
-    "q17": {
-      "question": "How many quotes do I need for a $7,000 purchase?",
-      "doc": "procurement-policy.md"
+    "m05": {
+      "question": "What APR would I pay on a used car?",
+      "doc": "auto-loan-rate-sheet.md",
+      "persona": "kiosk"
     },
-    "q18": {
-      "question": "Who approves purchases above $50,000?",
-      "doc": "procurement-policy.md"
+    "m06": {
+      "question": "What does a money market account pay?",
+      "doc": "savings-and-certificate-rates.md",
+      "persona": "kiosk"
     },
-    "q19": {
-      "question": "What must a new vendor complete before the first purchase order?",
-      "doc": "procurement-policy.md"
+    "m07": {
+      "question": "Is there a penalty for taking money out of a certificate early?",
+      "doc": "savings-and-certificate-rates.md",
+      "persona": "kiosk"
     },
-    "q20": {
-      "question": "What are the standard payment terms for invoices?",
-      "doc": "procurement-policy.md"
+    "m08": {
+      "question": "When can I use the money from a check I deposited with my phone?",
+      "doc": "mobile-deposit.md",
+      "persona": "kiosk"
     },
-    "q21": {
-      "question": "How fast must on-call acknowledge a SEV1?",
-      "doc": "incident-response-policy.md"
+    "m09": {
+      "question": "Can I skip my December loan payment, and what does it cost?",
+      "doc": "skip-a-pay.md",
+      "persona": "kiosk"
     },
-    "q22": {
-      "question": "What counts as a SEV2 incident?",
-      "doc": "incident-response-policy.md"
+    "m10": {
+      "question": "What's the daily limit for mobile check deposits?",
+      "doc": "mobile-deposit.md",
+      "persona": "priya"
     },
-    "q23": {
-      "question": "How often is the status page updated during a major outage?",
-      "doc": "incident-response-policy.md"
+    "s01": {
+      "question": "A member wants to dispute a debit card charge from an old statement. How long do they have to report it?",
+      "doc": "sample-card-dispute-procedure.md",
+      "persona": "priya"
     },
-    "q24": {
-      "question": "When is the postmortem due?",
-      "doc": "incident-response-policy.md"
+    "s02": {
+      "question": "When do we owe the member provisional credit on a card dispute?",
+      "doc": "sample-card-dispute-procedure.md",
+      "persona": "marcus"
     },
-    "q25": {
-      "question": "What are the data classification levels?",
-      "doc": "data-classification-policy.md"
+    "s03": {
+      "question": "Which outgoing wires need a second approver?",
+      "doc": "sample-wire-transfer-verification.md",
+      "persona": "dana"
     },
-    "q26": {
-      "question": "Can restricted data be sent by email?",
-      "doc": "data-classification-policy.md"
+    "s04": {
+      "question": "What's the cutoff for sending a domestic wire today?",
+      "doc": "sample-wire-transfer-verification.md",
+      "persona": "priya"
     },
-    "q27": {
-      "question": "How often is access to restricted data reviewed?",
-      "doc": "data-classification-policy.md"
+    "s05": {
+      "question": "Is caller ID enough to verify someone on the phone?",
+      "doc": "sample-member-identity-verification.md",
+      "persona": "marcus"
     },
-    "q28": {
-      "question": "What are the core hours for remote staff?",
-      "doc": "remote-work-policy.md"
+    "s06": {
+      "question": "Am I allowed to waive an overdraft fee for a member?",
+      "doc": "overdraft-courtesy-pay.md",
+      "persona": "priya"
     },
-    "q29": {
-      "question": "How much is the home office stipend?",
-      "doc": "remote-work-policy.md"
+    "s07": {
+      "question": "Does a power of attorney need witnesses before we accept it?",
+      "doc": "power-of-attorney.md",
+      "persona": "audrey"
     },
-    "q30": {
-      "question": "Will the company pay for a coworking space?",
-      "doc": "remote-work-policy.md"
+    "s08": {
+      "question": "Can a member's son interpret for her in Haitian Creole?",
+      "doc": "spanish-language-service.md",
+      "persona": "priya"
     },
-    "q31": {
-      "question": "How many days a year can I work from another country?",
-      "doc": "remote-work-policy.md"
+    "l01": {
+      "question": "With compensating factors, how high a debt-to-income ratio can a loan officer approve?",
+      "doc": "sample-consumer-lending-guidelines.md",
+      "persona": "dana"
     },
-    "q32": {
-      "question": "Do I need the VPN on hotel wifi?",
-      "doc": "remote-work-policy.md"
+    "l02": {
+      "question": "What's the maximum combined loan-to-value on a home equity line?",
+      "doc": "heloc-product-guide.md",
+      "persona": "marcus"
     },
-    "q33": {
-      "question": "What is the deadline for submitting an expense report?",
-      "doc": "expense-reimbursement-policy.md"
+    "l03": {
+      "question": "How quickly does a mortgage loan officer get back to a referred member?",
+      "doc": "mortgage-referral-process.md",
+      "persona": "priya"
     },
-    "q34": {
-      "question": "Do I need a receipt for a $30 lunch?",
-      "doc": "expense-reimbursement-policy.md"
+    "l04": {
+      "question": "How many payment deferrals can a member get in a year?",
+      "doc": "hardship-and-payment-deferral.md",
+      "persona": "audrey"
     },
-    "q35": {
-      "question": "When must corporate card statements be reconciled?",
-      "doc": "expense-reimbursement-policy.md"
+    "l05": {
+      "question": "At how many days past due do collectors start phoning?",
+      "doc": "early-stage-collections.md",
+      "persona": "dana"
     },
-    "q36": {
-      "question": "How much tip is reimbursed?",
-      "doc": "expense-reimbursement-policy.md"
+    "l06": {
+      "question": "How much can a dealer mark up the rate on an indirect auto loan?",
+      "doc": "indirect-lending-dealer-standards.md",
+      "persona": "marcus"
     },
-    "q37": {
-      "question": "When does a new hire's laptop ship?",
-      "doc": "onboarding-guide.md"
+    "c01": {
+      "question": "I think a member is splitting cash deposits to stay under $10,000. What do I do and by when?",
+      "doc": "unusual-activity-referral.md",
+      "persona": "priya"
     },
-    "q38": {
-      "question": "How soon must compliance training be finished?",
-      "doc": "onboarding-guide.md"
+    "c02": {
+      "question": "When do new signers have to be screened against the sanctions lists?",
+      "doc": "ofac-screening-procedure.md",
+      "persona": "dana"
     },
-    "q39": {
-      "question": "What is the retirement match?",
-      "doc": "benefits-overview.md"
+    "c03": {
+      "question": "How long does a BSA analyst have to review a referral?",
+      "doc": "restricted-bsa-aml-escalation.md",
+      "persona": "marcus"
     },
-    "q40": {
-      "question": "When does health insurance start for new employees?",
-      "doc": "benefits-overview.md"
+    "c04": {
+      "question": "How fast do we have to process a marketing opt-out?",
+      "doc": "privacy-and-glba-notice-procedure.md",
+      "persona": "marcus"
     },
-    "q41": {
-      "question": "How much is the wellness reimbursement?",
-      "doc": "benefits-overview.md"
+    "c05": {
+      "question": "Does a declined loan application get a second look before the denial goes out?",
+      "doc": "fair-lending-policy.md",
+      "persona": "dana"
     },
-    "q42": {
-      "question": "What is the level 3 engineer salary band?",
-      "doc": "hr-salary-bands.md"
+    "c06": {
+      "question": "How often does the NCUA examine us?",
+      "doc": "regulatory-exam-preparation.md",
+      "persona": "marcus"
     },
-    "q43": {
-      "question": "What is the breach hotline code word?",
-      "doc": "security-escalation-contacts.md"
+    "c07": {
+      "question": "How long do we keep personnel files after someone leaves?",
+      "doc": "sample-data-retention-policy.md",
+      "persona": "audrey"
+    },
+    "c08": {
+      "question": "How long do we have to resolve a member complaint?",
+      "doc": "sample-complaint-handling-policy.md",
+      "persona": "dana"
+    },
+    "b01": {
+      "question": "What's the most cash a teller can keep in the drawer?",
+      "doc": "cash-handling-limits.md",
+      "persona": "priya"
+    },
+    "b02": {
+      "question": "A member wants $15,000 in cash tomorrow. Do we need notice?",
+      "doc": "cash-handling-limits.md",
+      "persona": "marcus"
+    },
+    "b03": {
+      "question": "What should staff do right after a robbery?",
+      "doc": "robbery-response-procedure.md",
+      "persona": "audrey"
+    },
+    "b04": {
+      "question": "Which days are branch ATMs restocked?",
+      "doc": "atm-replenishment.md",
+      "persona": "priya"
+    },
+    "b05": {
+      "question": "How long is branch camera footage kept?",
+      "doc": "sample-branch-security-procedures.md",
+      "persona": "audrey"
+    },
+    "b06": {
+      "question": "How much is a large safe deposit box per year?",
+      "doc": "safe-deposit-boxes.md",
+      "persona": "priya"
+    },
+    "d01": {
+      "question": "What's the salary range for level 4?",
+      "doc": null,
+      "persona": "dana"
+    },
+    "d02": {
+      "question": "When does the payments on-call rotation hand over?",
+      "doc": null,
+      "persona": "priya"
+    },
+    "d03": {
+      "question": "How many days does the BSA officer have to make a SAR decision?",
+      "doc": null,
+      "persona": "priya"
+    },
+    "d04": {
+      "question": "When is a confirmed sanctions hit reported to OFAC?",
+      "doc": null,
+      "persona": "audrey"
+    },
+    "d05": {
+      "question": "How much cash do tellers keep in their drawers?",
+      "doc": null,
+      "persona": "kiosk"
+    },
+    "d06": {
+      "question": "What's the nightly hotel limit for staff travel?",
+      "doc": null,
+      "persona": "kiosk"
+    },
+    "d07": {
+      "question": "What is our CEO's name?",
+      "doc": null,
+      "persona": "priya"
+    },
+    "d08": {
+      "question": "What's the weather in Fort Lauderdale today?",
+      "doc": null,
+      "persona": "dana"
+    },
+    "d09": {
+      "question": "What time does the cafeteria open?",
+      "doc": null,
+      "persona": "audrey"
     }
   },
   "golden_files": [
-    "evals/golden/docs/benefits-overview.md",
-    "evals/golden/docs/data-classification-policy.md",
-    "evals/golden/docs/expense-reimbursement-policy.md",
-    "evals/golden/docs/hr-salary-bands.md",
-    "evals/golden/docs/incident-response-policy.md",
-    "evals/golden/docs/it-security-policy.md",
-    "evals/golden/docs/onboarding-guide.md",
-    "evals/golden/docs/parental-leave-policy.md",
-    "evals/golden/docs/procurement-policy.md",
-    "evals/golden/docs/remote-work-policy.md",
-    "evals/golden/docs/security-escalation-contacts.md",
-    "evals/golden/docs/travel-policy.md",
+    "demo/data/library.json",
+    "demo/sample-remote-work-policy.md",
+    "demo/sample-travel-expense-policy.md",
+    "demo/sample-ai-acceptable-use-policy.md",
+    "demo/restricted-hr-compensation-bands.md",
+    "demo/restricted-payments-oncall-runbook.md",
+    "demo/library/policies/benefits-overview.md",
+    "demo/library/policies/paid-time-off-and-leave.md",
+    "demo/library/policies/holiday-calendar-2026.md",
+    "demo/library/policies/code-of-conduct.md",
+    "demo/library/policies/password-and-mfa-standard.md",
+    "demo/library/policies/phishing-and-incident-reporting.md",
+    "demo/library/policies/tuition-reimbursement.md",
+    "demo/library/policies/vendor-access-standard.md",
+    "demo/library/policies/change-management-policy.md",
+    "demo/library/policies/business-continuity-plan-summary.md",
+    "demo/library/member-info/how-to-become-a-member.md",
+    "demo/library/member-info/fee-schedule.md",
+    "demo/library/member-info/branch-hours-and-holidays.md",
+    "demo/library/member-info/auto-loan-rate-sheet.md",
+    "demo/library/member-info/savings-and-certificate-rates.md",
+    "demo/library/member-info/mobile-deposit.md",
+    "demo/library/member-info/skip-a-pay.md",
+    "demo/sample-card-dispute-procedure.md",
+    "demo/sample-wire-transfer-verification.md",
+    "demo/sample-member-identity-verification.md",
+    "demo/library/member-services/account-opening-checklist.md",
+    "demo/library/member-services/overdraft-courtesy-pay.md",
+    "demo/library/member-services/stop-payment-procedure.md",
+    "demo/library/member-services/deceased-member-accounts.md",
+    "demo/library/member-services/power-of-attorney.md",
+    "demo/library/member-services/dormant-accounts-and-escheatment.md",
+    "demo/library/member-services/contact-center-call-handling.md",
+    "demo/library/member-services/spanish-language-service.md",
+    "demo/library/member-services/address-change-procedure.md",
+    "demo/sample-consumer-lending-guidelines.md",
+    "demo/library/lending/heloc-product-guide.md",
+    "demo/library/lending/mortgage-referral-process.md",
+    "demo/library/lending/hardship-and-payment-deferral.md",
+    "demo/library/lending/early-stage-collections.md",
+    "demo/library/lending/credit-card-limit-guidelines.md",
+    "demo/library/lending/indirect-lending-dealer-standards.md",
+    "demo/library/lending/small-business-lending-overview.md",
+    "demo/sample-data-retention-policy.md",
+    "demo/sample-complaint-handling-policy.md",
+    "demo/restricted-bsa-aml-escalation.md",
+    "demo/library/compliance/unusual-activity-referral.md",
+    "demo/library/compliance/ofac-screening-procedure.md",
+    "demo/library/compliance/privacy-and-glba-notice-procedure.md",
+    "demo/library/compliance/fair-lending-policy.md",
+    "demo/library/compliance/elder-financial-abuse-reporting.md",
+    "demo/library/compliance/udaap-and-marketing-review.md",
+    "demo/library/compliance/regulatory-exam-preparation.md",
+    "demo/sample-branch-security-procedures.md",
+    "demo/library/branch-operations/cash-handling-limits.md",
+    "demo/library/branch-operations/robbery-response-procedure.md",
+    "demo/library/branch-operations/atm-replenishment.md",
+    "demo/library/branch-operations/hurricane-preparedness.md",
+    "demo/library/branch-operations/lobby-kiosk-standard.md",
+    "demo/library/branch-operations/safe-deposit-boxes.md",
     "evals/golden/questions.jsonl",
-    "evals/golden/acl.json",
     "evals/thresholds.json"
   ]
 }

@@ -6,7 +6,7 @@ Medical, dental and vision coverage starts on the first day of the month after t
 
 ## Retirement
 
-The 401k retirement plan matches 100 percent of the first 4 percent of pay and 50 percent of the next 2 percent. Matching contributions vest after two years of service.
+The 401k match is 100 percent of the first 4 percent of pay and 50 percent of the next 2 percent. Matching contributions vest after two years of service.
 
 ## Other benefits
 

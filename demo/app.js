@@ -213,7 +213,7 @@ $("#keys-btn").onclick = openKeys;
 const TOUR = [
   { hash: "#/chat", sel: ".sugg-grid, .thread", title: "Ask like you'd ask a colleague", text: "Employees ask about policies and procedures in plain language. Answers come only from documents the asker may read, and every answer cites them." },
   { hash: "#/chat", sel: ".asking", title: "Same question, different person", text: "Switch who's asking. Priya in HR sees the salary bands; Dana in engineering asks the same question and that document never reaches her answer." },
-  { hash: "#/documents", sel: "#docTable, .card", title: "The library and who can read it", text: "57 documents in five collections, each with an owner and a review date. Access is set per collection and per document." },
+  { hash: "#/documents", sel: "#docTable, .card", title: "The library and who can read it", text: "59 documents in six collections, one of them written for members, each with an owner and a review date. Access is set per collection and per document." },
   { hash: "#/audit", sel: "#au .card, .card", title: "Every answer is on the record", text: "Each question records who asked, the access decision and the documents cited, in a log that shows if anyone edits it." },
   { hash: "#/overview", sel: ".kpis", title: "What it's worth to the business", text: "Adoption by department, hours saved, cost per answer, and the governance checks examiners ask about." },
 ];

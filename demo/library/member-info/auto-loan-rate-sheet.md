@@ -2,7 +2,7 @@
 
 ## New and used vehicles
 
-New vehicle loans start at 5.24 percent APR for terms up to 60 months and 5.74 percent for 61 to 84 months. Used vehicles from model year 2020 or newer start at 5.89 percent APR.
+Rates for a new car loan start at 5.24 percent APR for terms up to 60 months and 5.74 percent APR for 61 to 84 months. Used car loans for model year 2020 or newer start at 5.89 percent APR.
 
 ## Discounts
 

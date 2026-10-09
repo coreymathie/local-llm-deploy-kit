@@ -1,10 +1,10 @@
 {
-  "_comment": "Regression gates for scripts/rag_eval.py --check (k=4, demo embedder, bundled golden set). Set just under the values measured when they were introduced; raise them when retrieval improves, never lower them to make a change pass.",
+  "_comment": "Regression gates for scripts/rag_eval.py --check (k=4, demo embedder and extractive answerer, Cypress Harbor sample library, evals/golden/questions.jsonl). Each minimum is one point below the value measured when the credit-union golden set was introduced, rounded down. Raise them when retrieval or answering improves; never lower them to make a change pass. ACL leaks are a hard gate at 0.",
   "max_acl_leaks": 0,
   "configs": {
-    "vector+none": {"recall@1": 0.88, "recall@4": 0.95, "mrr": 0.92, "citation_accuracy": 0.86, "answer_contains": 0.93},
-    "bm25+none": {"recall@1": 0.97, "recall@4": 0.97, "mrr": 0.97, "citation_accuracy": 0.81, "answer_contains": 0.95},
-    "hybrid+none": {"recall@1": 0.93, "recall@4": 0.97, "mrr": 0.95, "citation_accuracy": 0.81, "answer_contains": 0.95},
-    "hybrid+lexical": {"recall@1": 0.97, "recall@4": 0.97, "mrr": 0.97, "citation_accuracy": 0.81, "answer_contains": 0.93}
+    "vector+none": {"recall@1": 0.79, "recall@4": 0.95, "mrr": 0.86, "citation_accuracy": 0.85, "answer_contains": 0.83, "decline_accuracy": 0.21},
+    "bm25+none": {"recall@1": 0.99, "recall@4": 0.99, "mrr": 0.99, "citation_accuracy": 0.89, "answer_contains": 0.85, "decline_accuracy": 0.1},
+    "hybrid+none": {"recall@1": 0.87, "recall@4": 0.99, "mrr": 0.93, "citation_accuracy": 0.91, "answer_contains": 0.83, "decline_accuracy": 0.21},
+    "hybrid+lexical": {"recall@1": 0.95, "recall@4": 0.99, "mrr": 0.96, "citation_accuracy": 0.87, "answer_contains": 0.85, "decline_accuracy": 0.21}
   }
 }

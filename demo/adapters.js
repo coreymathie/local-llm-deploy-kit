@@ -19,6 +19,15 @@ async function fetchText(url) {
 
 const lastN = (key, n = 8) => String(key).slice(-n);
 
+// Suggested questions in live mode, where demo/engine.py doesn't run: its STAFF_SUGGESTED and STAFF_POPULAR
+// (tests/test_sample_library.py keeps the two in step).
+const LIVE_SUGGESTIONS = {
+  personas: {},
+  popular_for: {},
+  default: ["What is the hotel cap per night?", "How long is an oral stop payment good for?", "What should I do if my laptop is stolen?", "Which wires need a callback?"].map((q) => ({ q, note: "" })),
+  popular: ["How long is an oral stop payment good for?", "What is the hotel cap per night?", "How much tuition is reimbursed each year?", "What is the 401k match?"].map((q) => ({ q, note: "" })),
+};
+
 // The sample library's catalog (scripts/sample_library.py): every document with its collection and access list.
 async function libraryCatalog() {
   return JSON.parse(await fetchText(new URL("data/library.json", location.href)));
@@ -98,25 +107,18 @@ export class DemoAdapter {
     this.pyodide = pyodide;
     this.py = pyodide.runPython(`import sys\nsys.path.insert(0, '${root}')\nimport engine\nengine`);
     this.info = await this.call("info");
-    await this.call("create_key", "billing-app");
-    await this.call("create_key", "qa-app", false, ["engineering"]);
+    await this.call("create_sample_keys"); // engine.SAMPLE_KEYS: member-faq-portal (public), staff-intranet-search (staff)
     progress("engine", "done");
 
     progress("samples", "active");
     const cat = await libraryCatalog();
     const texts = await Promise.all(cat.documents.map((d) => fetchText(new URL(d.path, location.href))));
-    for (let i = 0; i < cat.documents.length; i++) {
-      const d = cat.documents[i];
-      await this.call("add_document", d.collection, d.file, texts[i], d.acl);
-    }
-    // A little sample traffic so the overview and audit log have something to show (labelled simulated).
-    for (const [p, q] of [
-      ["priya", "What is the level 3 salary band?"],
-      ["dana", "What is the level 3 salary band?"],
-      ["dana", "How fast must the payments on-call engineer acknowledge a page?"],
-      ["kiosk", "What is the hotel cap per night?"],
-      ["audrey", "How long are audit logs retained?"],
-    ]) await this.call("ask_as", p, "policies", q);
+    const byFile = Object.fromEntries(cat.documents.map((d, i) => [d.file, texts[i]]));
+    const loaded = await this.call("load_library", cat, byFile); // documents, then each collection's access list
+    if (loaded.status !== 201) throw new Error(`sample library: ${loaded.detail}`);
+    // A little sample traffic so the overview and audit log have something to show (engine.SAMPLE_TRAFFIC).
+    await this.call("seed_sample_traffic");
+    this.suggest = await this.call("suggestions");
     progress("samples", "done");
     return this.describe();
   }
@@ -141,6 +143,7 @@ export class DemoAdapter {
 
   // identity
   personas() { return this.call("personas"); }
+  suggestions() { return this.suggest || LIVE_SUGGESTIONS; }
   whoami(persona, collection) { return this.call("whoami", persona, collection); }
   // chat
   ask(persona, collection, question, o = {}) {
@@ -156,7 +159,7 @@ export class DemoAdapter {
   // documents
   async collections() {
     const cols = await this.call("collections");
-    const order = ["policies", "member-services", "lending", "compliance", "branch-operations"];
+    const order = ["policies", "member-info", "member-services", "lending", "compliance", "branch-operations"];
     const rank = (name) => (order.includes(name) ? order.indexOf(name) : order.length);
     return Array.isArray(cols) ? cols.sort((a, b) => rank(a.name) - rank(b.name)) : cols;
   }
@@ -203,10 +206,13 @@ export class DemoAdapter {
   // evals
   async evals() { return JSON.parse(await fetchText(new URL("data/rag_eval.json", location.href))); }
   async runEvalInBrowser(files) {
+    // The eval reads the sample library and the golden questions from the repository layout under /home/pyodide.
     const root = "/home/pyodide";
-    this.pyodide.FS.mkdirTree(`${root}/evals/golden/docs`);
     const texts = await Promise.all(files.map((f) => fetchText(new URL(`../${f}`, location.href))));
-    files.forEach((f, i) => this.pyodide.FS.writeFile(`${root}/${f}`, texts[i]));
+    files.forEach((f, i) => {
+      this.pyodide.FS.mkdirTree(`${root}/${f.split("/").slice(0, -1).join("/")}`);
+      this.pyodide.FS.writeFile(`${root}/${f}`, texts[i]);
+    });
     return this.call("run_rag_eval");
   }
   reset() { return this.call("reset"); }
@@ -276,6 +282,8 @@ export class LiveAdapter {
     if (Array.isArray(data)) return data;
     return { ...(data || {}), status: r.status };
   }
+
+  suggestions() { return LIVE_SUGGESTIONS; }
 
   _keyFor(persona) {
     if (!persona || persona === "self") return this.credential;
@@ -443,9 +451,10 @@ export class LiveAdapter {
     const results = [];
     const cat = await libraryCatalog();
     for (const d of cat.documents) results.push(await this.addText(d.collection, d.file, await fetchText(new URL(d.path, location.href)), d.acl));
+    for (const c of cat.collections) if (c.acl && c.acl.length) results.push(await this.setCollectionAcl(c.name, c.acl));
     const existing = await this.keys();
     const have = new Set(Array.isArray(existing) ? existing.filter((k) => !k.revoked).map((k) => k.label) : []);
-    for (const [label, groups] of [["hr-assistant", ["hr"]], ["eng-assistant", ["engineering"]], ["lobby-kiosk", []]]) {
+    for (const [label, groups] of [["hr-assistant", ["staff", "hr"]], ["eng-assistant", ["staff", "engineering"]], ["lobby-kiosk", ["public"]]]) {
       if (!have.has(label)) results.push(await this.createKey(label, false, groups));
     }
     const failed = results.find((r) => r.status >= 400);

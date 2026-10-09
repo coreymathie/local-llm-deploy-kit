@@ -110,6 +110,9 @@ def _sentences(text: str) -> list[str]:
 
 
 NO_ANSWER = "I don't know: none of the documents you can access answer that."
+# "How long", "how much", "how often": the question's form, not its subject. Ignored when picking answer
+# sentences, so "How long are records kept?" doesn't quote a sentence that says passwords are 14 characters long.
+QUESTION_FORM = {"long", "much", "many", "often", "fast", "soon"}
 
 
 def extractive_answer(question: str, sources: list[tuple[int, str]], max_sentences: int = 3) -> str:
@@ -118,7 +121,7 @@ def extractive_answer(question: str, sources: list[tuple[int, str]], max_sentenc
     Sentences come from the best sentence's source or the top-ranked passage, unless another source scores
     nearly as well (85%), so an answer doesn't stitch an unrelated policy onto the right one.
     """
-    q = set(terms(question, digits=True))
+    q = set(terms(question, digits=True)) - QUESTION_FORM
     cands, seen = [], set()
     for n, text in sources:
         for s in _sentences(text):
@@ -230,47 +233,205 @@ MODEL_METADATA = {
 
 
 DEMO_ISSUER = "https://idp.demo.invalid"
-GROUP_ROLES = {"staff": ["user"], "auditors": ["reader:policies"]}
+# Sign-in groups to roles. Staff get the user role; collection access lists (demo/data/library.json) then decide
+# which collections they read. Internal audit reads every collection, read-only and without free-form chat;
+# a document's own access list still applies to auditors.
+GROUP_ROLES = {"staff": ["user"], "auditors": ["reader:*"]}
+
+# Suggested questions on the assistant screen: (question, the document that must answer it). A None document
+# marks a question that demonstrates a refusal; its note says so in the UI.
 PERSONAS = {
     "admin": {"name": "Admin", "kind": "api_key", "note": "bootstrap admin key: role admin"},
     "priya": {
-        "name": "Priya Shah (HR)",
+        "name": "Priya Shah (Human resources)",
         "kind": "oidc",
+        "department": "Human resources",
         "claims": {"sub": "priya", "groups": ["staff", "hr"]},
         "note": "HR business partner · SSO token, groups staff + hr",
+        "suggested": [
+            ("What is the level 3 salary band?", "restricted-hr-compensation-bands.md"),
+            ("How many days of PTO do I get?", "paid-time-off-and-leave.md"),
+            ("What is the 401k match?", "benefits-overview.md"),
+            ("Can I accept a gift from a member?", "code-of-conduct.md"),
+        ],
     },
     "dana": {
-        "name": "Dana Ortiz (Engineering)",
+        "name": "Dana Ortiz (IT and digital banking)",
         "kind": "oidc",
+        "department": "IT and digital banking",
         "claims": {"sub": "dana", "groups": ["staff", "engineering"]},
         "note": "Digital banking engineer · SSO token, groups staff + engineering",
+        "suggested": [
+            (
+                "How fast must the payments on-call engineer acknowledge a page?",
+                "restricted-payments-oncall-runbook.md",
+            ),
+            ("When is the production change freeze?", "change-management-policy.md"),
+            ("How long is a vendor account valid?", "vendor-access-standard.md"),
+            ("How long must passwords be?", "password-and-mfa-standard.md"),
+        ],
     },
     "marcus": {
-        "name": "Marcus Bell (Compliance)",
+        "name": "Marcus Bell (Compliance and BSA)",
         "kind": "oidc",
+        "department": "Compliance and BSA",
         "claims": {"sub": "marcus", "groups": ["staff", "compliance"]},
         "note": "BSA officer · SSO token, groups staff + compliance",
+        "suggested": [
+            ("How long does the BSA officer have to decide on a filing?", "restricted-bsa-aml-escalation.md"),
+            ("When must a confirmed OFAC match be reported?", "restricted-bsa-aml-escalation.md"),
+            (
+                "How long can we delay a suspicious transaction for an older member?",
+                "elder-financial-abuse-reporting.md",
+            ),
+            ("How fast must a complaint be acknowledged?", "sample-complaint-handling-policy.md"),
+        ],
     },
     "kiosk": {
         "name": "Branch lobby kiosk",
         "kind": "api_key",
         "label": "lobby-kiosk",
-        "note": "Member-facing kiosk · API key, no groups",
+        "groups": ["public"],
+        "note": "Member-facing kiosk · API key, group public: Member information only",
+        "suggested": [
+            ("What time do branches close on Saturday?", "branch-hours-and-holidays.md"),
+            ("How much is a stop payment?", "fee-schedule.md"),
+            ("What rate is a new car loan?", "auto-loan-rate-sheet.md"),
+            ("How do I become a member?", "how-to-become-a-member.md"),
+        ],
+        "popular": [
+            ("What is the overdraft fee?", "fee-schedule.md"),
+            ("How much can I deposit with mobile deposit?", "mobile-deposit.md"),
+            ("What does a 12-month certificate earn?", "savings-and-certificate-rates.md"),
+            ("Are branches open on Thanksgiving?", "branch-hours-and-holidays.md"),
+        ],
     },
     "audrey": {
         "name": "Audrey Kim (Internal audit)",
         "kind": "oidc",
+        "department": "Internal audit",
         "claims": {"sub": "audrey", "groups": ["auditors"]},
-        "note": "Internal auditor · SSO token, group auditors: reader:policies only",
+        "note": "Internal auditor · SSO token, group auditors: reader:* (every collection, read-only); restricted "
+        "documents stay hidden and free-form chat is refused",
+        "suggested": [
+            ("How long are audit logs retained?", "sample-data-retention-policy.md"),
+            ("What is the level 3 salary band?", None),
+            ("What is the gift limit for employees?", "code-of-conduct.md"),
+            ("How often is the business continuity plan tested?", "business-continuity-plan-summary.md"),
+        ],
+        "notes": {"What is the level 3 salary band?": "HR-only document: expect a refusal"},
     },
 }
+# Staff personas without their own list (the admin, keys created in the console), and the sidebar's examples.
+STAFF_SUGGESTED = [
+    ("What is the hotel cap per night?", "sample-travel-expense-policy.md"),
+    ("How long is an oral stop payment good for?", "stop-payment-procedure.md"),
+    ("What should I do if my laptop is stolen?", "phishing-and-incident-reporting.md"),
+    ("Which wires need a callback?", "sample-wire-transfer-verification.md"),
+]
+STAFF_POPULAR = [
+    ("How long is an oral stop payment good for?", "stop-payment-procedure.md"),
+    ("What is the hotel cap per night?", "sample-travel-expense-policy.md"),
+    ("How much tuition is reimbursed each year?", "tuition-reimbursement.md"),
+    ("What is the 401k match?", "benefits-overview.md"),
+]
+# Seeded on boot so the overview and audit log have something to show (labelled as this session's traffic).
+SAMPLE_TRAFFIC = [
+    ("priya", "What is the level 3 salary band?"),
+    ("dana", "What is the level 3 salary band?"),
+    ("dana", "How fast must the payments on-call engineer acknowledge a page?"),
+    ("kiosk", "What time do branches close on Saturday?"),
+    ("audrey", "How long are audit logs retained?"),
+]
+# Demo API keys created on boot: (label, groups). A member-facing web widget reads Member information only;
+# the intranet search app reads what any employee may read.
+SAMPLE_KEYS = [("member-faq-portal", ["public"]), ("staff-intranet-search", ["staff"])]
+
+
+def persona_principal(persona: str) -> identity.Principal:
+    """A persona's principal from its definition alone (no key, no rate limit): for evals and tests.
+
+    OIDC personas go through identity.principal_for_claims with the demo's GROUP_ROLES; key personas get the
+    user role and their key groups, as identity.principal_for_key gives a non-admin key.
+    """
+    spec = PERSONAS[persona]
+    if spec["kind"] == "oidc":
+        saved = settings.GATEWAY_OIDC_GROUP_ROLES
+        settings.GATEWAY_OIDC_GROUP_ROLES = GROUP_ROLES
+        try:
+            return identity.principal_for_claims({"iss": DEMO_ISSUER, "aud": "llm-gateway", **spec["claims"]})
+        finally:
+            settings.GATEWAY_OIDC_GROUP_ROLES = saved
+    if persona == "admin":
+        return identity.Principal("api_key", "admin", "bootstrap admin", frozenset({"admin"}), frozenset())
+    label = spec["label"]
+    return identity.Principal("api_key", label, label, frozenset({"user"}), frozenset(spec.get("groups", ())))
 
 
 ALL = "*"  # the console's "All sources": every collection the caller may read
 # The console declines when the best passage's embedding similarity is below this, instead of quoting a
 # passage that shares one word with the question. Measured on the sample library: real questions score
-# 0.13 and up, off-topic ones ("What is our CEO's name?") 0.07. Not applied in scripts/rag_eval.py.
+# 0.13 and up, off-topic ones ("What is our CEO's name?") 0.07. scripts/rag_eval.py applies the same rule
+# through answer(), so its decline questions measure what the console does.
 RELEVANCE_FLOOR = 0.09
+
+
+async def retrieve_all(principal, question: str, top_k: int, config: dict):
+    """One ranking over every collection the caller may read (the console's "All sources").
+
+    Each collection's access decision is made first, exactly as for a single collection; only the admitted
+    passages are pooled and ranked together, so hidden documents never reach scoring. Returns (sources,
+    combined access decision, doc id -> collection).
+    """
+    pooled, decisions, where = [], [], {}
+    for c in rag.list_collections(None):
+        access = rag.access_for(principal, c["name"])
+        decisions.append(access.audit())
+        if access.allowed and access.doc_ids:
+            for row in rag.candidates(c["name"], access):
+                pooled.append((access, row))
+                where[row["doc_id"]] = c["name"]
+    combined = _combined(decisions)
+    if not pooled:
+        return [], combined, where
+    vector_scores = None
+    if config["mode"] != "bm25":
+        q = (await rag.embed([question]))[0]
+        matrix = np.vstack([np.frombuffer(r["embedding"], dtype=np.float32) for _, r in pooled])
+        vector_scores = (matrix @ q).tolist()
+    ranked = retrieval.rank(
+        question,
+        [r["text"] for _, r in pooled],
+        vector_scores,
+        mode=config["mode"],
+        top_k=max(1, min(top_k, 12)),
+        rrf_k=settings.GATEWAY_RRF_K,
+        reranker=retrieval.get_reranker(config["reranker"], settings.GATEWAY_CROSS_ENCODER_MODEL),
+        rerank_candidates=settings.GATEWAY_RERANK_CANDIDATES,
+    )
+    sources = [
+        rag.Source(
+            n=i + 1,
+            doc_id=pooled[j][1]["doc_id"],
+            title=pooled[j][1]["title"],
+            chunk=pooled[j][1]["idx"],
+            score=float(detail["final"]),
+            text=pooled[j][1]["text"],
+            access=pooled[j][0].doc_basis.get(pooled[j][1]["doc_id"], ""),
+            scores={k: v for k, v in detail.items() if k != "final"},
+        )
+        for i, (j, detail) in enumerate(ranked)
+    ]
+    return sources, combined, where
+
+
+async def answer(question: str, sources: list) -> backends.ChatResult:
+    """The console's answer step: decline below the relevance floor, otherwise ask the backend."""
+    similarity = max((s.scores or {}).get("vector", 1.0) for s in sources)
+    if similarity < RELEVANCE_FLOOR:  # nothing close enough to answer from: decline without generating
+        return backends.ChatResult(NO_ANSWER, 0, len(NO_ANSWER.split()), "chatcmpl-demo", DEMO_MODEL)
+    params = backends.ChatParams(model=DEMO_MODEL, messages=rag.build_messages(question, sources), temperature=0.1)
+    return await backends.get_backend().chat(params)
 
 
 def _combined(decisions: list[dict]) -> dict:
@@ -405,7 +566,10 @@ class DemoEngine:
 
     def personas(self) -> list[dict]:
         """The built-in personas, then every other active API key (created on the Users & Keys screen)."""
-        out = [{"id": pid, "name": p["name"], "kind": p["kind"], "note": p["note"]} for pid, p in PERSONAS.items()]
+        out = [
+            {"id": pid, "name": p["name"], "kind": p["kind"], "note": p["note"], "department": p.get("department", "")}
+            for pid, p in PERSONAS.items()
+        ]
         bound = set(self._persona_keys.values())
         for k in store.list_keys():
             if k.revoked_at or k.key in bound:
@@ -415,6 +579,42 @@ class DemoEngine:
             note = f"API key, {role}, {groups}"
             out.append({"id": f"key:{k.label}:{k.key[-6:]}", "name": k.label, "kind": "api_key", "note": note})
         return out
+
+    def suggestions(self) -> dict:
+        """Suggested questions for the assistant screen: per persona, for other staff, and the sidebar's examples."""
+
+        def items(pairs, notes=None):
+            return [{"q": q, "note": (notes or {}).get(q, "")} for q, _doc in pairs]
+
+        personas = {pid: items(p["suggested"], p.get("notes")) for pid, p in PERSONAS.items() if "suggested" in p}
+        popular = {pid: items(p["popular"]) for pid, p in PERSONAS.items() if "popular" in p}
+        return {
+            "personas": personas,
+            "popular_for": popular,
+            "default": items(STAFF_SUGGESTED),
+            "popular": items(STAFF_POPULAR),
+        }
+
+    def create_sample_keys(self) -> list[dict]:
+        return [self.create_key(label, False, groups) for label, groups in SAMPLE_KEYS]
+
+    async def load_library(self, catalog: dict, texts: dict[str, str]) -> dict:
+        """Add every catalog document with its access list, then set each collection's access list."""
+        added = 0
+        for d in catalog["documents"]:
+            out = await self.add_document(d["collection"], d["file"], texts[d["file"]], d["acl"])
+            if out["status"] != 201:
+                return {"status": out["status"], "detail": f"{d['file']}: {out.get('detail')}"}
+            added += 1
+        for c in catalog["collections"]:
+            if c.get("acl"):
+                out = self.set_collection_acl(c["name"], c["acl"])
+                if out["status"] != 200:
+                    return out
+        return {"status": 201, "documents": added, "collections": len(catalog["collections"])}
+
+    async def seed_sample_traffic(self) -> list[int]:
+        return [(await self.ask_as(p, ALL, q))["status"] for p, q in SAMPLE_TRAFFIC]
 
     async def _principal(self, persona: str):
         if persona.startswith("key:"):
@@ -431,7 +631,7 @@ class DemoEngine:
             # Claims as a verified token would carry them; the role mapping below is the gateway's own code.
             return identity.principal_for_claims({"iss": DEMO_ISSUER, "aud": "llm-gateway", **spec["claims"]})
         if persona not in self._persona_keys:
-            self._persona_keys[persona] = self.create_key(spec["label"])["key"]
+            self._persona_keys[persona] = self.create_key(spec["label"], False, spec.get("groups", []))["key"]
         rec, err = await self._authenticate(self._persona_keys[persona])
         if err:
             raise HTTPException(err["status"], err["detail"])
@@ -611,53 +811,6 @@ class DemoEngine:
         log_prompt(p.label, DEMO_MODEL, json.dumps(params.messages), result.content, total)
         return {"status": 200, "content": result.content, "total_tokens": total, "model": DEMO_MODEL}
 
-    async def _retrieve_all(self, rec, question: str, top_k: int, config: dict):
-        """One ranking over every collection the caller may read (the console's "All sources").
-
-        Each collection's access decision is made first, exactly as for a single collection; only the
-        admitted passages are pooled and ranked together, so hidden documents never reach scoring.
-        """
-        pooled, decisions, where = [], [], {}
-        for c in rag.list_collections(None):
-            access = rag.access_for(rec, c["name"])
-            decisions.append(access.audit())
-            if access.allowed and access.doc_ids:
-                for row in rag.candidates(c["name"], access):
-                    pooled.append((access, row))
-                    where[row["doc_id"]] = c["name"]
-        combined = _combined(decisions)
-        if not pooled:
-            return [], combined, where
-        vector_scores = None
-        if config["mode"] != "bm25":
-            q = (await rag.embed([question]))[0]
-            matrix = np.vstack([np.frombuffer(r["embedding"], dtype=np.float32) for _, r in pooled])
-            vector_scores = (matrix @ q).tolist()
-        ranked = retrieval.rank(
-            question,
-            [r["text"] for _, r in pooled],
-            vector_scores,
-            mode=config["mode"],
-            top_k=max(1, min(top_k, 12)),
-            rrf_k=settings.GATEWAY_RRF_K,
-            reranker=retrieval.get_reranker(config["reranker"], settings.GATEWAY_CROSS_ENCODER_MODEL),
-            rerank_candidates=settings.GATEWAY_RERANK_CANDIDATES,
-        )
-        sources = [
-            rag.Source(
-                n=i + 1,
-                doc_id=pooled[j][1]["doc_id"],
-                title=pooled[j][1]["title"],
-                chunk=pooled[j][1]["idx"],
-                score=float(detail["final"]),
-                text=pooled[j][1]["text"],
-                access=pooled[j][0].doc_basis.get(pooled[j][1]["doc_id"], ""),
-                scores={k: v for k, v in detail.items() if k != "final"},
-            )
-            for i, (j, detail) in enumerate(ranked)
-        ]
-        return sources, combined, where
-
     async def _answer(
         self, rec, collection: str, question: str, top_k: int, mode: str | None = None, reranker: str | None = None
     ) -> dict:
@@ -665,7 +818,7 @@ class DemoEngine:
         try:
             config = rag.retrieval_config(mode or None, reranker or None)
             if collection == ALL:
-                sources, access_audit, where = await self._retrieve_all(rec, question, top_k, config)
+                sources, access_audit, where = await retrieve_all(rec, question, top_k, config)
             else:
                 access = rag.access_for(rec, collection)
                 access_audit, where = access.audit(), {}
@@ -688,12 +841,7 @@ class DemoEngine:
         if not sources:
             return {"status": 404, "detail": f"collection {collection!r} has no documents yet"}
         t_retrieval = time.perf_counter()
-        params = backends.ChatParams(model=DEMO_MODEL, messages=rag.build_messages(question, sources), temperature=0.1)
-        similarity = max((s.scores or {}).get("vector", 1.0) for s in sources)
-        if similarity < RELEVANCE_FLOOR:  # nothing close enough to answer from: decline without generating
-            result = backends.ChatResult(NO_ANSWER, 0, len(NO_ANSWER.split()), "chatcmpl-demo", DEMO_MODEL)
-        else:
-            result = await backends.get_backend().chat(params)
+        result = await answer(question, sources)
         t_generation = time.perf_counter()
         timings = {
             "access": round((t_access - started) * 1000, 2),
@@ -775,7 +923,7 @@ class DemoEngine:
         if spec["kind"] == "oidc":
             return identity.principal_for_claims({"iss": DEMO_ISSUER, "aud": "llm-gateway", **spec["claims"]})
         if persona not in self._persona_keys:
-            self._persona_keys[persona] = self.create_key(spec["label"])["key"]
+            self._persona_keys[persona] = self.create_key(spec["label"], False, spec.get("groups", []))["key"]
         rec = store.get_active_key(self._persona_keys[persona])
         return identity.principal_for_key(rec) if rec else None  # None: the persona's key was revoked
 

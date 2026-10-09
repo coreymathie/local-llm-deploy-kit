@@ -43,13 +43,13 @@ def load_samples(eng):
 
 
 def test_keys_rate_limit_and_revocation_use_the_real_auth_code(engine):
-    key = engine.create_key("billing-app")["key"]
+    key = engine.create_key("member-faq-portal")["key"]
     statuses = [run(engine.chat(key, "hello"))["status"] for _ in range(4)]
     assert statuses == [200, 200, 200, 429]
     assert "rate limit exceeded (3/min)" in run(engine.chat(key, "x"))["detail"]
     assert engine.revoke_key(key)["status"] == 200
     assert run(engine.chat(key, "x")) == {"status": 401, "detail": "invalid or revoked key"}
-    row = next(k for k in engine.list_keys() if k["label"] == "billing-app")
+    row = next(k for k in engine.list_keys() if k["label"] == "member-faq-portal")
     assert row["revoked"] and row["requests_total"] == 3
     assert engine.revoke_key(engine.admin_key)["status"] == 409  # last-admin guard, as in main.py
 
@@ -93,7 +93,7 @@ def test_tampering_is_detected_and_the_tail_limitation_is_reported(engine):
         ("How long are audit logs retained?", "sample-data-retention-policy.md", "six years"),
         ("Is a VPN required on hotel wifi?", "sample-remote-work-policy.md", "VPN connection is required"),
         ("How much is the home office stipend?", "sample-remote-work-policy.md", "$500"),
-        ("How fast must deletion requests be completed?", "sample-data-retention-policy.md", "30 days"),
+        ("How long are member account records kept?", "sample-data-retention-policy.md", "seven years"),
     ],
 )
 def test_document_qa_retrieves_and_cites_the_right_policy(engine, question, title, phrase):
@@ -186,10 +186,12 @@ def test_personas_in_different_groups_get_different_answers_and_citations(engine
     dana = run(engine.ask_as("dana", "policies", oncall))
     assert "15 minutes" in dana["answer"] and dana["sources"][0]["title"] == "restricted-payments-oncall-runbook.md"
     assert "15 minutes" not in run(engine.ask_as("priya", "policies", oncall))["answer"]
-    admin = run(engine.ask_as("admin", "policies", salary, 12))
-    assert {"restricted-hr-compensation-bands.md", "restricted-payments-oncall-runbook.md"} <= {
-        s["title"] for s in admin["sources"]
-    }
+    for q, title in (
+        (salary, "restricted-hr-compensation-bands.md"),
+        (oncall, "restricted-payments-oncall-runbook.md"),
+    ):
+        admin = run(engine.ask_as("admin", "policies", q))
+        assert admin["sources"][0]["title"] == title and admin["sources"][0]["cited"]  # admin reads both
     entry = [r["entry"] for r in engine.audit_lines() if r["entry"]["event"] == "document_question"][-1]
     assert entry["payload"]["access"]["basis"] == "role:admin" and audit.verify()["ok"]
 
@@ -197,9 +199,9 @@ def test_personas_in_different_groups_get_different_answers_and_citations(engine
 def test_compliance_procedure_is_only_retrieved_for_the_compliance_group(engine):
     load_samples(engine)
     load_restricted(engine)
-    q = "Within how many hours must unusual activity be referred to the BSA team?"
+    q = "How long does the BSA officer have to decide whether to file?"
     marcus = run(engine.ask_as("marcus", "policies", q))
-    assert marcus["status"] == 200 and "24 hours" in marcus["answer"]
+    assert marcus["status"] == 200 and "30 days" in marcus["answer"]
     assert marcus["sources"][0]["title"] == "restricted-bsa-aml-escalation.md" and marcus["sources"][0]["cited"]
     for persona in ("priya", "dana", "kiosk", "audrey"):
         out = run(engine.ask_as(persona, "policies", q))
@@ -224,11 +226,12 @@ def test_whoami_shows_roles_from_groups_and_reader_limits(engine):
     load_restricted(engine)
     audrey = run(engine.whoami("audrey"))
     assert audrey["kind"] == "oidc" and audrey["label"] == "user:audrey"
-    assert audrey["roles"] == ["reader:policies"] and audrey["can_chat"] is False
+    assert audrey["roles"] == ["reader:*"] and audrey["can_chat"] is False
     assert run(engine.chat_as("audrey", "hi"))["status"] == 403
     assert len(audrey["visible"]) == 10 and audrey["hidden_count"] == 3
     kiosk = run(engine.whoami("kiosk"))
-    assert kiosk["kind"] == "api_key" and kiosk["roles"] == ["user"] and kiosk["hidden_count"] == 3
+    assert kiosk["kind"] == "api_key" and kiosk["roles"] == ["user"] and kiosk["groups"] == ["public"]
+    assert kiosk["hidden_count"] == 3
     assert run(engine.chat_as("kiosk", "hi"))["status"] == 200
     priya = run(engine.whoami("priya"))
     assert priya["groups"] == ["hr", "staff"] and "restricted-hr-compensation-bands.md" in priya["visible"]

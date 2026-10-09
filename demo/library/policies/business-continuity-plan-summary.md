@@ -6,7 +6,7 @@ Core banking must be restored within 4 hours of a declared disaster, with no mor
 
 ## Alternate sites
 
-If the Fort Lauderdale operations center is unavailable, operations move to the Weston branch training room. Employees with a company laptop can work remotely over the VPN.
+If the Fort Lauderdale operations center is unavailable, operations move to the Weston branch training room. Employees with a credit union laptop can work remotely over the VPN.
 
 ## Testing
 

@@ -1,13 +1,13 @@
 # Account Opening Checklist
 
-## Required documents
+## Identity documents
 
-Every new member provides one government-issued photo ID and a Social Security or Individual Taxpayer Identification Number. Non-resident applicants may use a passport with a visa.
+Every new member provides one government-issued photo ID and a Social Security or Individual Taxpayer Identification Number, as the Member Identity Verification Standard requires. Non-resident applicants may use a passport with a visa.
 
-## Membership eligibility
+## Checks before opening
 
-Anyone who lives, works, worships or attends school in Broward, Palm Beach or Miami-Dade County may join, along with family members of current members.
+Confirm membership eligibility, screen the applicant against the OFAC sanctions lists and run a ChexSystems report before opening any account. If the OFAC screen returns a potential match, do not open the account; follow the OFAC Screening Procedure.
 
-## Opening deposit
+## After opening
 
-Membership requires a $5 deposit into a Share Savings account, which establishes the member's ownership share. Everyday Checking has no minimum opening deposit.
+Give the member the privacy notice and the account agreement, and offer online banking enrollment before the member leaves.

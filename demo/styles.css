@@ -493,6 +493,8 @@ body[data-screen="chat"] .view { max-width: none; padding: 0; }
 .sugg { justify-content: space-between; text-align: left; white-space: normal; padding: 12px 14px; border-radius: 12px; font-weight: 500; background: var(--panel); min-height: 58px; }
 .sugg svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--subtle); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sugg:hover svg { stroke: var(--accent); }
+.sugg-note { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.sugg.expect-refusal { border-style: dashed; }
 .assistant .msg.user { align-self: auto; background: none; color: inherit; padding: 0; max-width: 820px; display: flex; justify-content: flex-end; }
 .assistant .msg.user .bubble { background: var(--accent); color: var(--on-accent); padding: 10px 14px; border-radius: 16px 16px 4px 16px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant .msg.bot { background: none; border: 0; padding: 0; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; }

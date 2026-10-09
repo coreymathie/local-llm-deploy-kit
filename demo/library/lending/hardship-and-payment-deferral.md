@@ -6,7 +6,7 @@ Members facing a temporary hardship, such as job loss, illness or a declared dis
 
 ## Terms
 
-A deferral moves up to 2 monthly payments to the end of the loan. Members may receive no more than 2 deferrals in any 12-month period. Interest continues to accrue during the deferral.
+A deferral moves up to 2 monthly payments to the end of the loan, for a $35 deferral fee. Members may receive no more than 2 deferrals in any 12-month period. Interest continues to accrue during the deferral.
 
 ## Disaster relief
 

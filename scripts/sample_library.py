@@ -5,10 +5,14 @@ Write the document library of Cypress Harbor Credit Union, a fictional credit un
 demo mode: demo/library/<collection>/*.md and the catalog demo/data/library.json.
 
 Every document is invented for the demo. It is written to read like a mid-size credit union's internal
-procedures (owners, review dates, concrete limits and deadlines) so the assistant has something real to
-answer from, but none of it is legal, regulatory or HR guidance, and the console marks the whole
-workspace as fictional. The thirteen documents that predate the library stay in demo/ (the tests and
-the RAG eval fixtures use them); the catalog adds their titles and owners.
+procedures and member-facing pages (owners, review dates, concrete limits and deadlines) so the assistant
+has something real to answer from, but none of it is legal, regulatory or HR guidance, and the console
+marks the whole workspace as fictional. The thirteen documents that predate the library stay in demo/
+(the tests use them); the catalog places them in their collections and adds their titles and owners.
+
+This file is the single source for the sample institution's departments, document owners and access
+rules: scripts/generate_sample_company.py reads the department list and the access rules from the
+catalog, and demo/engine.py's personas use the same department names and groups.
 
     python scripts/sample_library.py            # write the library and the catalog
     python scripts/sample_library.py --check    # exit 1 if anything committed differs
@@ -25,153 +29,109 @@ ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "demo" / "library"
 CATALOG = ROOT / "demo" / "data" / "library.json"
 
+# One department list for the whole sample institution: document owners, personas and usage figures.
+DEPARTMENTS = [
+    "Member services and branches",
+    "Lending",
+    "IT and digital banking",
+    "Payments and fraud operations",
+    "Finance and accounting",
+    "Compliance and BSA",
+    "Marketing",
+    "Human resources",
+    "Facilities and security",
+    "Executive",
+    "Internal audit",
+]
+
+# Document owners: name -> (department, role)
+PEOPLE = {
+    "Priya Shah": ("Human resources", "HR business partner"),
+    "Elena Petrov": ("Compliance and BSA", "Chief compliance officer"),
+    "Marcus Bell": ("Compliance and BSA", "BSA officer"),
+    "Grace Liu": ("Finance and accounting", "Controller"),
+    "Rosa Jimenez": ("Member services and branches", "Director of member services"),
+    "Thomas Reed": ("Payments and fraud operations", "Payments operations manager"),
+    "Andre Baptiste": ("Lending", "Chief lending officer"),
+    "Victor Ramos": ("Facilities and security", "Facilities and security manager"),
+    "Kevin Tran": ("IT and digital banking", "Information security officer"),
+    "Dana Ortiz": ("IT and digital banking", "Digital banking engineer"),
+}
+
+# Sign-in and key groups that appear in access lists, and who they are.
+GROUPS = {
+    "staff": "All staff",
+    "public": "the lobby kiosk and member-facing apps",
+    "hr": "Human resources",
+    "engineering": "IT engineering",
+    "compliance": "Compliance and BSA",
+}
+
+# Collection access lists. Staff collections admit group:staff; Member information also admits the public
+# group (the lobby kiosk and other member-facing keys). Auditors read every collection through the
+# reader:* role, which still does not override a document's own access list.
 COLLECTIONS = [
     {
         "name": "policies",
         "label": "Staff policies",
-        "description": "HR, IT, security and conduct policies for every employee",
+        "description": "HR, IT, security and conduct policies for every employee, and IT runbooks",
+        "acl": ["group:staff"],
+    },
+    {
+        "name": "member-info",
+        "label": "Member information",
+        "description": "Fees, hours, rates and how to join, written for members; the only collection the lobby kiosk reads",
+        "acl": ["group:public", "group:staff"],
     },
     {
         "name": "member-services",
         "label": "Member services",
-        "description": "Procedures for branch and contact-center staff",
+        "description": "Procedures for branch, contact-center and payments staff",
+        "acl": ["group:staff"],
     },
-    {"name": "lending", "label": "Lending", "description": "Loan products, underwriting and servicing"},
-    {"name": "compliance", "label": "Compliance", "description": "Regulatory procedures, privacy and fair lending"},
+    {
+        "name": "lending",
+        "label": "Lending",
+        "description": "Loan products, underwriting and servicing",
+        "acl": ["group:staff"],
+    },
+    {
+        "name": "compliance",
+        "label": "Compliance",
+        "description": "BSA/AML, OFAC, privacy, fair lending and records",
+        "acl": ["group:staff"],
+    },
     {
         "name": "branch-operations",
         "label": "Branch operations",
         "description": "Cash, security and facilities for the 11 branches",
+        "acl": ["group:staff"],
     },
 ]
 
-# The documents in demo/ that the library started with: (file, title, owner, department, reviewed, version, type)
+# The documents in demo/ that the library started with: (file, collection, title, owner, reviewed, version, type)
 ORIGINALS = [
-    (
-        "sample-remote-work-policy.md",
-        "Remote Work Policy",
-        "Priya Shah",
-        "Human resources",
-        "2026-06-02",
-        "3.1",
-        "docx",
-    ),
-    (
-        "sample-data-retention-policy.md",
-        "Data Retention and Records Policy",
-        "Elena Petrov",
-        "Compliance",
-        "2026-04-15",
-        "5.0",
-        "pdf",
-    ),
-    (
-        "sample-travel-expense-policy.md",
-        "Travel and Expense Policy",
-        "Grace Liu",
-        "Finance",
-        "2026-01-20",
-        "4.2",
-        "pdf",
-    ),
-    (
-        "sample-card-dispute-procedure.md",
-        "Card Dispute Procedure",
-        "Rosa Jimenez",
-        "Member services",
-        "2026-08-11",
-        "2.4",
-        "docx",
-    ),
-    (
-        "sample-wire-transfer-verification.md",
-        "Wire Transfer Verification",
-        "Thomas Reed",
-        "Payments operations",
-        "2026-07-07",
-        "3.0",
-        "pdf",
-    ),
-    (
-        "sample-consumer-lending-guidelines.md",
-        "Consumer Lending Guidelines",
-        "Andre Baptiste",
-        "Lending",
-        "2026-09-29",
-        "6.1",
-        "pdf",
-    ),
-    (
-        "sample-member-identity-verification.md",
-        "Member Identity Verification Standard",
-        "Rosa Jimenez",
-        "Member services",
-        "2026-05-19",
-        "2.0",
-        "docx",
-    ),
-    (
-        "sample-complaint-handling-policy.md",
-        "Member Complaint Handling Policy",
-        "Elena Petrov",
-        "Compliance",
-        "2026-03-30",
-        "2.2",
-        "pdf",
-    ),
-    (
-        "sample-branch-security-procedures.md",
-        "Branch Security Procedures",
-        "Victor Ramos",
-        "Facilities and security",
-        "2026-02-10",
-        "4.0",
-        "pdf",
-    ),
-    (
-        "sample-ai-acceptable-use-policy.md",
-        "Acceptable Use of AI Assistants",
-        "Kevin Tran",
-        "IT and digital banking",
-        "2026-08-25",
-        "1.1",
-        "docx",
-    ),
-    (
-        "restricted-hr-compensation-bands.md",
-        "Compensation Bands 2026",
-        "Priya Shah",
-        "Human resources",
-        "2026-03-02",
-        "2026.1",
-        "xlsx",
-    ),
-    (
-        "restricted-payments-oncall-runbook.md",
-        "Payments On-Call Runbook",
-        "Dana Ortiz",
-        "IT and digital banking",
-        "2026-09-14",
-        "7.3",
-        "md",
-    ),
-    (
-        "restricted-bsa-aml-escalation.md",
-        "BSA/AML Escalation Procedure",
-        "Marcus Bell",
-        "Compliance and BSA",
-        "2026-07-21",
-        "3.2",
-        "pdf",
-    ),
-]
+    ("sample-remote-work-policy.md", "policies", "Remote Work Policy", "Priya Shah", "2026-06-02", "3.2", "docx"),
+    ("sample-travel-expense-policy.md", "policies", "Travel and Expense Policy", "Grace Liu", "2026-01-20", "4.2", "pdf"),
+    ("sample-ai-acceptable-use-policy.md", "policies", "Acceptable Use of AI Assistants", "Kevin Tran", "2026-08-25", "1.1", "docx"),
+    ("restricted-hr-compensation-bands.md", "policies", "Compensation Bands 2026", "Priya Shah", "2026-03-02", "2026.1", "xlsx"),
+    ("restricted-payments-oncall-runbook.md", "policies", "Payments On-Call Runbook", "Dana Ortiz", "2026-09-14", "7.3", "md"),
+    ("sample-card-dispute-procedure.md", "member-services", "Card Dispute Procedure", "Rosa Jimenez", "2026-08-11", "3.0", "docx"),
+    ("sample-wire-transfer-verification.md", "member-services", "Wire Transfer Verification", "Thomas Reed", "2026-07-07", "3.0", "pdf"),
+    ("sample-member-identity-verification.md", "member-services", "Member Identity Verification Standard", "Rosa Jimenez", "2026-06-16", "2.1", "docx"),
+    ("sample-consumer-lending-guidelines.md", "lending", "Consumer Lending Guidelines", "Andre Baptiste", "2026-09-29", "6.1", "pdf"),
+    ("sample-data-retention-policy.md", "compliance", "Data Retention and Records Policy", "Elena Petrov", "2026-04-15", "5.1", "pdf"),
+    ("sample-complaint-handling-policy.md", "compliance", "Member Complaint Handling Policy", "Elena Petrov", "2026-03-30", "2.3", "pdf"),
+    ("restricted-bsa-aml-escalation.md", "compliance", "BSA/AML Escalation Procedure", "Marcus Bell", "2026-07-21", "4.0", "pdf"),
+    ("sample-branch-security-procedures.md", "branch-operations", "Branch Security Procedures", "Victor Ramos", "2026-02-10", "4.1", "pdf"),
+]  # fmt: skip
 ORIGINAL_ACL = {
     "restricted-hr-compensation-bands.md": ["group:hr"],
     "restricted-payments-oncall-runbook.md": ["group:engineering"],
     "restricted-bsa-aml-escalation.md": ["group:compliance"],
 }
 
-# (collection, slug, title, owner, department, reviewed, version, type, acl, body)
+# (collection, slug, title, owner, reviewed, version, type, acl, body); the department comes from PEOPLE
 DOCS = [
     # ---------------- staff policies ----------------
     (
@@ -179,7 +139,6 @@ DOCS = [
         "benefits-overview",
         "Employee Benefits Overview",
         "Priya Shah",
-        "Human resources",
         "2026-01-05",
         "2026.1",
         "pdf",
@@ -191,7 +150,7 @@ Medical, dental and vision coverage starts on the first day of the month after t
 
 ## Retirement
 
-The 401k retirement plan matches 100 percent of the first 4 percent of pay and 50 percent of the next 2 percent. Matching contributions vest after two years of service.
+The 401k match is 100 percent of the first 4 percent of pay and 50 percent of the next 2 percent. Matching contributions vest after two years of service.
 
 ## Other benefits
 
@@ -203,7 +162,6 @@ Employees receive a $25 monthly wellness credit and free basic life insurance wo
         "paid-time-off-and-leave",
         "Paid Time Off and Leave",
         "Priya Shah",
-        "Human resources",
         "2026-01-05",
         "3.4",
         "pdf",
@@ -227,7 +185,6 @@ Eligible employees receive 8 weeks of paid parental leave within 12 months of a 
         "holiday-calendar-2026",
         "Holiday Calendar 2026",
         "Priya Shah",
-        "Human resources",
         "2025-11-20",
         "2026",
         "pdf",
@@ -237,9 +194,9 @@ Eligible employees receive 8 weeks of paid parental leave within 12 months of a 
 
 The credit union observes New Year's Day, Martin Luther King Jr. Day, Presidents Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Columbus Day, Veterans Day, Thanksgiving Day and Christmas Day.
 
-## Branch and contact-center hours
+## Branch and contact-center staffing
 
-Branches and the member contact center are closed on observed holidays. The AI voice agent and online banking stay available, and holiday transfers to a person go to the next business day callback queue.
+Branches and the member contact center are closed on observed holidays. Online banking and the mobile app stay available, and callback requests left on a holiday are returned on the next business day.
 
 ## Floating holiday
 
@@ -251,7 +208,6 @@ Each employee receives one floating holiday per year, which must be used by Dece
         "code-of-conduct",
         "Code of Conduct",
         "Elena Petrov",
-        "Compliance",
         "2026-02-18",
         "4.0",
         "pdf",
@@ -275,7 +231,6 @@ Report suspected misconduct to a manager, to compliance or to the anonymous ethi
         "password-and-mfa-standard",
         "Password and Multi-Factor Authentication Standard",
         "Kevin Tran",
-        "IT and digital banking",
         "2026-06-30",
         "2.3",
         "pdf",
@@ -283,7 +238,7 @@ Report suspected misconduct to a manager, to compliance or to the anonymous ethi
         """
 ## Passwords
 
-Passwords must be at least 14 characters long. Use the company password manager; do not reuse a work password anywhere else.
+Passwords must be at least 14 characters long. Use the credit union's password manager, and never reuse a work sign-in anywhere else.
 
 ## Multi-factor authentication
 
@@ -299,7 +254,6 @@ Accounts lock after 5 failed sign-in attempts. The IT service desk unlocks accou
         "phishing-and-incident-reporting",
         "Phishing and Security Incident Reporting",
         "Kevin Tran",
-        "IT and digital banking",
         "2026-07-12",
         "3.0",
         "pdf",
@@ -323,7 +277,6 @@ The security team acknowledges an incident report within 1 hour during business 
         "tuition-reimbursement",
         "Tuition Reimbursement Program",
         "Priya Shah",
-        "Human resources",
         "2025-12-08",
         "1.4",
         "docx",
@@ -335,7 +288,7 @@ Employees with at least 6 months of service may apply for tuition reimbursement 
 
 ## Amounts
 
-The credit union reimburses up to $5,250 per calendar year for courses completed with a grade of B or better. Certification exams relevant to the employee's role are reimbursed in full.
+Tuition is reimbursed up to $5,250 per calendar year for courses completed with a grade of B or better. Certification exams relevant to the employee's role are reimbursed in full.
 
 ## Applying
 
@@ -347,7 +300,6 @@ Submit the application before the course starts. Employees who leave within 12 m
         "vendor-access-standard",
         "Vendor and Third-Party Access Standard",
         "Kevin Tran",
-        "IT and digital banking",
         "2026-05-04",
         "2.1",
         "pdf",
@@ -355,7 +307,7 @@ Submit the application before the course starts. Employees who leave within 12 m
         """
 ## Access requests
 
-Vendor accounts are requested by the employee who owns the vendor relationship and approved by IT security. Every vendor account has an expiry date no more than 90 days out.
+Vendor accounts are requested by the employee who owns the vendor relationship and approved by IT security. A vendor account is valid for no more than 90 days and is renewed only at the relationship owner's request.
 
 ## Remote sessions
 
@@ -371,7 +323,6 @@ Vendor management reviews critical vendors every year, including their latest SO
         "change-management-policy",
         "Change Management Policy",
         "Dana Ortiz",
-        "IT and digital banking",
         "2026-04-27",
         "2.6",
         "md",
@@ -383,7 +334,7 @@ Every production change has a ticket with a rollback plan and an approver who di
 
 ## Change freeze
 
-No production changes are made between December 20 and January 3, or in the two business days before and after month-end close, except emergency fixes approved by the CIO.
+The production change freeze runs from December 20 to January 3 and covers the two business days before and after month-end close. Only emergency fixes approved by the CIO are deployed during a freeze.
 
 ## Emergency changes
 
@@ -395,7 +346,6 @@ Emergency changes may be deployed first and documented within one business day. 
         "business-continuity-plan-summary",
         "Business Continuity Plan Summary",
         "Victor Ramos",
-        "Facilities and security",
         "2026-05-28",
         "5.1",
         "pdf",
@@ -407,44 +357,42 @@ Core banking must be restored within 4 hours of a declared disaster, with no mor
 
 ## Alternate sites
 
-If the Fort Lauderdale operations center is unavailable, operations move to the Weston branch training room. Employees with a company laptop can work remotely over the VPN.
+If the Fort Lauderdale operations center is unavailable, operations move to the Weston branch training room. Employees with a credit union laptop can work remotely over the VPN.
 
 ## Testing
 
 The plan is tested twice a year, including one full failover of the core system to the secondary data center.
 """,
     ),
-    # ---------------- member services ----------------
+    # ---------------- member information (member-facing) ----------------
     (
-        "member-services",
-        "account-opening-checklist",
-        "Account Opening Checklist",
+        "member-info",
+        "how-to-become-a-member",
+        "How to Become a Member",
         "Rosa Jimenez",
-        "Member services",
         "2026-06-16",
-        "3.2",
-        "docx",
+        "2.0",
+        "pdf",
         [],
         """
-## Required documents
+## Who can join
 
-Every new member provides one government-issued photo ID and a Social Security or Individual Taxpayer Identification Number. Non-resident applicants may use a passport with a visa.
+You can become a member if you live, work, worship or attend school in Broward, Palm Beach or Miami-Dade County. Family members of current members can join too.
 
-## Membership eligibility
+## What to bring
 
-Anyone who lives, works, worships or attends school in Broward, Palm Beach or Miami-Dade County may join, along with family members of current members.
+To become a member, bring one government-issued photo ID and your Social Security number or Individual Taxpayer Identification Number. If the address on your ID is not current, also bring a utility bill or lease dated within the last 60 days.
 
 ## Opening deposit
 
-Membership requires a $5 deposit into a Share Savings account, which establishes the member's ownership share. Everyday Checking has no minimum opening deposit.
+Membership starts with a $5 deposit into a Share Savings account, which is your ownership share in the credit union. Everyday Checking has no minimum opening deposit.
 """,
     ),
     (
-        "member-services",
+        "member-info",
         "fee-schedule",
         "Fee Schedule",
         "Rosa Jimenez",
-        "Member services",
         "2026-07-01",
         "2026.2",
         "pdf",
@@ -456,11 +404,150 @@ Everyday Checking has no monthly fee. Share Savings has no monthly fee when the 
 
 ## Service fees
 
-An overdraft or returned item costs $25, with a limit of 3 fees per day. A stop payment costs $30, a domestic outgoing wire costs $25 and an international outgoing wire costs $45.
+An overdraft or returned item costs $25, with no more than 3 fees per day. A stop payment costs $30.
 
-## Waivers
+## Wires
 
-Member services representatives may waive one overdraft fee per member every 12 months. Further waivers need a supervisor's approval and a note in the CRM.
+A domestic outgoing wire costs $25 and an international outgoing wire costs $45. Incoming wires are free.
+""",
+    ),
+    (
+        "member-info",
+        "branch-hours-and-holidays",
+        "Branch Hours and Holidays",
+        "Rosa Jimenez",
+        "2026-06-01",
+        "3.0",
+        "pdf",
+        [],
+        """
+## Weekday hours
+
+Branch lobbies are open 9:00 to 17:00 Monday through Friday. The Las Olas and Weston branches stay open until 18:00 on weekdays.
+
+## Saturday hours
+
+On Saturday, branches open at 9:00 and close at 12:00. Branches are not open on Sunday.
+
+## Holidays and storms
+
+Branches and the contact center are shut on the 11 holidays the credit union observes, including Thanksgiving Day and Christmas Day. When a hurricane warning is issued for a county, its branches stay shut until it is safe to reopen; updates appear on the website, in the mobile app and on the phone line's recorded greeting.
+""",
+    ),
+    (
+        "member-info",
+        "auto-loan-rate-sheet",
+        "Auto Loan Rate Sheet",
+        "Andre Baptiste",
+        "2026-10-01",
+        "2026.10",
+        "pdf",
+        [],
+        """
+## New and used vehicles
+
+Rates for a new car loan start at 5.24 percent APR for terms up to 60 months and 5.74 percent APR for 61 to 84 months. Used car loans for model year 2020 or newer start at 5.89 percent APR.
+
+## Discounts
+
+Members with automatic payment from a Cypress Harbor checking account receive a 0.25 percent rate discount.
+
+## Rate locks
+
+Approved rates are locked for 30 days. Rates are updated on the first business day of each month.
+""",
+    ),
+    (
+        "member-info",
+        "savings-and-certificate-rates",
+        "Savings and Certificate Rates",
+        "Grace Liu",
+        "2026-10-01",
+        "2026.10",
+        "pdf",
+        [],
+        """
+## Savings
+
+Share Savings earns 0.15 percent APY on balances of $5 or more. Money Market accounts earn 2.10 percent APY on balances of $10,000 or more.
+
+## Share certificates
+
+Share certificates need a $500 minimum deposit. A 12-month certificate earns 4.05 percent APY and a 24-month certificate earns 3.80 percent APY.
+
+## Early withdrawal
+
+Taking certificate funds out before maturity costs 90 days of dividends for terms of 12 months or less and 180 days of dividends for longer terms.
+""",
+    ),
+    (
+        "member-info",
+        "mobile-deposit",
+        "Mobile Deposit Limits and Availability",
+        "Kevin Tran",
+        "2026-08-04",
+        "3.0",
+        "pdf",
+        [],
+        """
+## Limits
+
+You can deposit up to $5,000 per day and $10,000 per month with mobile deposit. Members with 12 months of good standing may request higher limits.
+
+## When funds are available
+
+The first $275 of a mobile deposit is available on the next business day. The rest is available on the second business day.
+
+## Holds
+
+A deposit into an account open less than 30 days, or a check that looks irregular, may be held for up to 7 business days, and you are told about any hold the same day. Endorse the check "For mobile deposit only at Cypress Harbor CU".
+""",
+    ),
+    (
+        "member-info",
+        "skip-a-pay",
+        "Skip-a-Pay Program",
+        "Andre Baptiste",
+        "2026-10-02",
+        "1.3",
+        "pdf",
+        [],
+        """
+## How it works
+
+Members may skip one monthly payment on an eligible consumer loan in November or December for a $35 fee.
+
+## Eligibility
+
+The loan must be at least 6 months old and no payment may have been more than 30 days late in the past 12 months. Mortgages, home equity lines and credit cards are not eligible.
+
+## Requests
+
+Requests are submitted in online banking by November 15 for a November skip and by December 10 for a December skip.
+""",
+    ),
+    # ---------------- member services ----------------
+    (
+        "member-services",
+        "account-opening-checklist",
+        "Account Opening Checklist",
+        "Rosa Jimenez",
+        "2026-06-16",
+        "3.2",
+        "docx",
+        [],
+        """
+## Identity documents
+
+Every new member provides one government-issued photo ID and a Social Security or Individual Taxpayer Identification Number, as the Member Identity Verification Standard requires. Non-resident applicants may use a passport with a visa.
+
+## Checks before opening
+
+Confirm membership eligibility, screen the applicant against the OFAC sanctions lists and run a ChexSystems report before opening any account. If the OFAC screen returns a potential match, do not open the account; follow the OFAC Screening Procedure.
+
+## After opening
+
+Give the member the privacy notice and the account agreement, and offer online banking enrollment before the member leaves.
 """,
     ),
     (
@@ -468,7 +555,6 @@ Member services representatives may waive one overdraft fee per member every 12 
         "overdraft-courtesy-pay",
         "Overdraft and Courtesy Pay",
         "Rosa Jimenez",
-        "Member services",
         "2026-04-08",
         "2.0",
         "pdf",
@@ -485,6 +571,10 @@ Courtesy pay applies to ATM and one-time debit card transactions only if the mem
 ## Repayment
 
 An overdrawn account must be brought positive within 30 days. After 45 days negative, the account goes to the collections team.
+
+## Fee waivers
+
+Member services representatives may waive one overdraft fee per member every 12 months. Further waivers need a supervisor's approval and a note in the CRM.
 """,
     ),
     (
@@ -492,7 +582,6 @@ An overdrawn account must be brought positive within 30 days. After 45 days nega
         "stop-payment-procedure",
         "Stop Payment Procedure",
         "Rosa Jimenez",
-        "Member services",
         "2025-11-03",
         "1.6",
         "docx",
@@ -500,63 +589,15 @@ An overdrawn account must be brought positive within 30 days. After 45 days nega
         """
 ## Placing a stop payment
 
-A stop payment can be placed on a check that hasn't cleared by phone, in online banking or at a branch. Record the check number, the amount and the payee.
+A stop payment can be placed on a check that hasn't cleared by phone, in online banking or at a branch. Record the check number, the amount and the payee, and charge the stop payment fee from the Fee Schedule.
 
 ## Duration
 
-An oral stop payment request lasts 14 days unless the member confirms it in writing. A written stop payment lasts 6 months and can be renewed. A stop payment costs $30.
+An oral stop payment request lasts 14 days unless the member confirms it in writing. A written stop payment lasts 6 months and can be renewed.
 
 ## Electronic payments
 
-To stop a recurring electronic payment, the member also tells the company to stop charging. Stop payments on electronic payments must be received at least 3 business days before the payment date.
-""",
-    ),
-    (
-        "member-services",
-        "mobile-deposit-holds",
-        "Mobile Deposit Limits and Holds",
-        "Kevin Tran",
-        "IT and digital banking",
-        "2026-03-23",
-        "2.2",
-        "pdf",
-        [],
-        """
-## Limits
-
-Members can deposit up to $5,000 per day and $10,000 per month with mobile deposit. Members with 12 months of good standing may request higher limits.
-
-## Availability
-
-The first $225 of a mobile deposit is available the next business day. The rest is available on the second business day.
-
-## Holds
-
-Deposits from accounts open less than 30 days, or larger than $5,000, may be held for up to 7 business days. Write "For mobile deposit only at Cypress Harbor CU" on the back of the check.
-""",
-    ),
-    (
-        "member-services",
-        "atm-and-debit-card-disputes",
-        "ATM and Debit Card Error Resolution",
-        "Rosa Jimenez",
-        "Member services",
-        "2026-08-11",
-        "2.1",
-        "pdf",
-        [],
-        """
-## Reporting window
-
-Members report electronic fund transfer errors within 60 days of the statement that showed the error.
-
-## Investigation
-
-Investigate within 10 business days. If more time is needed, give provisional credit within those 10 business days and finish within 45 days, or 90 days for point-of-sale and foreign transactions.
-
-## ATM cash shortages
-
-When an ATM dispenses less cash than requested, balance the ATM the same day and credit the member if the balance confirms the shortage.
+To stop a recurring electronic payment, the member also tells the merchant to stop charging. Stop payments on electronic payments must be received at least 3 business days before the payment date.
 """,
     ),
     (
@@ -564,7 +605,6 @@ When an ATM dispenses less cash than requested, balance the ATM the same day and
         "deceased-member-accounts",
         "Deceased Member Accounts",
         "Rosa Jimenez",
-        "Member services",
         "2026-02-02",
         "1.8",
         "docx",
@@ -588,7 +628,6 @@ Offer condolences, avoid jargon and give the family a single point of contact. S
         "power-of-attorney",
         "Power of Attorney Requests",
         "Rosa Jimenez",
-        "Member services",
         "2025-10-14",
         "1.5",
         "pdf",
@@ -612,7 +651,6 @@ Escalate to the elder financial abuse team if the agent was recently added, is n
         "dormant-accounts-and-escheatment",
         "Dormant Accounts and Unclaimed Property",
         "Elena Petrov",
-        "Compliance",
         "2026-01-27",
         "2.0",
         "pdf",
@@ -636,7 +674,6 @@ After 5 years without member contact, Florida unclaimed property law requires th
         "contact-center-call-handling",
         "Contact Center Call Handling Standard",
         "Rosa Jimenez",
-        "Member services",
         "2026-09-08",
         "4.3",
         "docx",
@@ -644,15 +681,15 @@ After 5 years without member contact, Florida unclaimed property law requires th
         """
 ## Service levels
 
-The member contact center answers 80 percent of calls within 30 seconds once the AI agent transfers a caller. Callbacks requested after hours are returned by 11:00 the next business day.
+The member contact center answers 80 percent of calls within 30 seconds of the caller reaching the queue. Callbacks requested after hours are returned by 11:00 the next business day.
 
-## Transfers from the AI agent
+## Transfers
 
-Calls transferred by the AI agent arrive with a summary and the reason for the transfer. Do not ask the member to repeat information the summary already contains.
+Calls transferred from another team arrive with a CRM note that states the reason for the transfer. Do not ask the member to repeat information the note already contains.
 
 ## Quality reviews
 
-Supervisors review 5 calls per representative per month, including at least one transferred from the AI agent, and score them against the quality form.
+Supervisors review 5 calls per representative per month, including at least one transferred call, and score them against the quality form.
 """,
     ),
     (
@@ -660,7 +697,6 @@ Supervisors review 5 calls per representative per month, including at least one 
         "spanish-language-service",
         "Spanish-Language Service Standard",
         "Rosa Jimenez",
-        "Member services",
         "2026-08-03",
         "1.2",
         "docx",
@@ -668,7 +704,7 @@ Supervisors review 5 calls per representative per month, including at least one 
         """
 ## Availability
 
-Spanish-language service is available in every branch during business hours and in the contact center from 8:00 to 19:00, Monday through Saturday. The AI agent answers in Spanish at any hour.
+Spanish-language service is available in every branch during business hours and in the contact center from 8:00 to 19:00, Monday through Saturday. Online banking and the mobile app are also available in Spanish.
 
 ## Documents
 
@@ -684,7 +720,6 @@ For Haitian Creole and other languages, use the phone interpreter service; never
         "address-change-procedure",
         "Address and Contact Change Procedure",
         "Rosa Jimenez",
-        "Member services",
         "2026-05-19",
         "2.3",
         "docx",
@@ -706,34 +741,9 @@ Escalate to the fraud team if a contact change is followed by a payment, a payee
     # ---------------- lending ----------------
     (
         "lending",
-        "auto-loan-rate-sheet",
-        "Auto Loan Rate Sheet",
-        "Andre Baptiste",
-        "Lending",
-        "2026-10-01",
-        "2026.10",
-        "pdf",
-        [],
-        """
-## New and used vehicles
-
-New vehicle loans start at 5.24 percent APR for terms up to 60 months and 5.74 percent for 61 to 84 months. Used vehicles from model year 2020 or newer start at 5.89 percent APR.
-
-## Discounts
-
-Members with automatic payment from a Cypress Harbor checking account receive a 0.25 percent rate discount.
-
-## Rate locks
-
-Approved rates are locked for 30 days. Rates are updated on the first business day of each month.
-""",
-    ),
-    (
-        "lending",
         "heloc-product-guide",
         "Home Equity Line of Credit Product Guide",
         "Andre Baptiste",
-        "Lending",
         "2026-08-18",
         "3.0",
         "pdf",
@@ -757,7 +767,6 @@ The credit union pays closing costs on lines up to $250,000 if the line stays op
         "mortgage-referral-process",
         "Mortgage Referral Process",
         "Andre Baptiste",
-        "Lending",
         "2026-03-09",
         "1.9",
         "docx",
@@ -781,7 +790,6 @@ First-time home buyers are offered the Harbor Home program with down payments as
         "hardship-and-payment-deferral",
         "Hardship and Payment Deferral Program",
         "Andre Baptiste",
-        "Lending",
         "2026-09-30",
         "2.5",
         "pdf",
@@ -793,7 +801,7 @@ Members facing a temporary hardship, such as job loss, illness or a declared dis
 
 ## Terms
 
-A deferral moves up to 2 monthly payments to the end of the loan. Members may receive no more than 2 deferrals in any 12-month period. Interest continues to accrue during the deferral.
+A deferral moves up to 2 monthly payments to the end of the loan, for a $35 deferral fee. Members may receive no more than 2 deferrals in any 12-month period. Interest continues to accrue during the deferral.
 
 ## Disaster relief
 
@@ -802,34 +810,9 @@ After a federally declared disaster in the credit union's counties, the lending 
     ),
     (
         "lending",
-        "skip-a-pay",
-        "Skip-a-Pay Program",
-        "Andre Baptiste",
-        "Lending",
-        "2026-10-02",
-        "1.3",
-        "pdf",
-        [],
-        """
-## How it works
-
-Members may skip one monthly payment on an eligible consumer loan in November or December for a $35 fee.
-
-## Eligibility
-
-The loan must be at least 6 months old and no payment may have been more than 30 days late in the past 12 months. Mortgages, home equity lines and credit cards are not eligible.
-
-## Requests
-
-Requests are submitted in online banking by November 15 for a November skip and by December 10 for a December skip.
-""",
-    ),
-    (
-        "lending",
         "early-stage-collections",
         "Early-Stage Collections Procedure",
         "Andre Baptiste",
-        "Lending",
         "2026-06-23",
         "3.1",
         "docx",
@@ -853,7 +836,6 @@ Collectors may offer a payment arrangement of up to 3 months without manager app
         "credit-card-limit-guidelines",
         "Credit Card Limit Guidelines",
         "Andre Baptiste",
-        "Lending",
         "2026-04-20",
         "2.0",
         "pdf",
@@ -877,7 +859,6 @@ Secured card accounts are reviewed after 12 months of on-time payments for gradu
         "indirect-lending-dealer-standards",
         "Indirect Lending Dealer Standards",
         "Andre Baptiste",
-        "Lending",
         "2025-12-15",
         "2.2",
         "pdf",
@@ -901,7 +882,6 @@ Lending reviews each dealer's loans every quarter for early payment defaults and
         "small-business-lending-overview",
         "Small Business Lending Overview",
         "Andre Baptiste",
-        "Lending",
         "2026-05-12",
         "1.7",
         "docx",
@@ -923,10 +903,55 @@ Applications up to $100,000 are decided by the business lending officer within 5
     # ---------------- compliance ----------------
     (
         "compliance",
+        "unusual-activity-referral",
+        "Unusual Activity Referral Policy",
+        "Marcus Bell",
+        "2026-07-21",
+        "1.0",
+        "pdf",
+        [],
+        """
+## When to refer
+
+Any employee who sees unusual activity submits a referral to the BSA team within 24 hours, using the referral form in the case system. Examples include cash deposits structured just under $10,000, rapid movement of funds through a new account and a member who avoids giving identification.
+
+## How referrals are decided
+
+Referrals are decided by the BSA team, which reviews each one and handles any regulatory filing. The employee who made the referral is not told the outcome.
+
+## Confidentiality
+
+Never tell a member that a referral was made or that their activity looks unusual. Keep handling the member's normal requests unless the BSA team says otherwise.
+""",
+    ),
+    (
+        "compliance",
+        "ofac-screening-procedure",
+        "OFAC Screening Procedure",
+        "Marcus Bell",
+        "2026-07-21",
+        "2.0",
+        "pdf",
+        [],
+        """
+## When to screen
+
+Screen every new member, every new signer and every outgoing wire against the OFAC sanctions lists before opening the account or sending the wire.
+
+## Potential matches
+
+Place a hold on a potential match and send it to the BSA officer within 1 hour. Do not tell the member why the transaction is on hold.
+
+## False positives
+
+The BSA officer reviews each alert and records why a name was cleared. Release the hold only after the BSA officer clears it.
+""",
+    ),
+    (
+        "compliance",
         "privacy-and-glba-notice-procedure",
         "Privacy Notice and Information Sharing Procedure",
         "Elena Petrov",
-        "Compliance",
         "2026-02-24",
         "2.4",
         "pdf",
@@ -950,7 +975,6 @@ Requests for member information from third parties, including law enforcement, g
         "fair-lending-policy",
         "Fair Lending Policy",
         "Elena Petrov",
-        "Compliance",
         "2026-06-09",
         "3.0",
         "pdf",
@@ -974,7 +998,6 @@ Compliance tests pricing and decisions for disparities every quarter and reports
         "elder-financial-abuse-reporting",
         "Elder Financial Abuse Reporting",
         "Elena Petrov",
-        "Compliance",
         "2026-07-28",
         "2.1",
         "docx",
@@ -998,7 +1021,6 @@ Compliance reports suspected abuse to the Florida Abuse Hotline and to adult pro
         "udaap-and-marketing-review",
         "UDAAP and Marketing Review",
         "Elena Petrov",
-        "Compliance",
         "2026-03-16",
         "1.8",
         "docx",
@@ -1019,34 +1041,9 @@ Keep a copy of every approved advertisement for 2 years.
     ),
     (
         "compliance",
-        "ofac-screening-procedure",
-        "OFAC Screening Procedure",
-        "Marcus Bell",
-        "Compliance and BSA",
-        "2026-07-21",
-        "2.0",
-        "pdf",
-        ["group:compliance"],
-        """
-## When to screen
-
-Screen every new member, every new signer and every outgoing wire against the OFAC sanctions lists before opening the account or sending the wire.
-
-## Potential matches
-
-Place a hold on a potential match and send it to the BSA officer within 1 hour. Do not tell the member why the transaction is on hold.
-
-## Confirmed matches
-
-Confirmed matches are blocked or rejected and reported to OFAC within 10 business days.
-""",
-    ),
-    (
-        "compliance",
         "regulatory-exam-preparation",
         "Regulatory Examination Preparation",
         "Elena Petrov",
-        "Compliance",
         "2026-08-31",
         "1.4",
         "docx",
@@ -1071,7 +1068,6 @@ For the internal AI assistant, provide the model inventory and pins, the access 
         "cash-handling-limits",
         "Cash Handling Limits",
         "Victor Ramos",
-        "Facilities and security",
         "2026-02-10",
         "3.3",
         "pdf",
@@ -1095,7 +1091,6 @@ Suspected counterfeit notes are kept, not returned to the member, and sent to th
         "robbery-response-procedure",
         "Robbery Response Procedure",
         "Victor Ramos",
-        "Facilities and security",
         "2026-02-10",
         "4.0",
         "pdf",
@@ -1103,7 +1098,7 @@ Suspected counterfeit notes are kept, not returned to the member, and sent to th
         """
 ## During a robbery
 
-Comply with the robber's demands and give bait money if it is safe to do so. Do not chase or follow the robber.
+During a robbery, comply with the robber's demands and give bait money if it is safe to do so. Do not chase or follow the robber.
 
 ## After the robbery
 
@@ -1119,7 +1114,6 @@ Every employee present is offered counseling through the employee assistance pro
         "atm-replenishment",
         "ATM Replenishment and Balancing",
         "Victor Ramos",
-        "Facilities and security",
         "2026-04-13",
         "2.0",
         "pdf",
@@ -1140,34 +1134,9 @@ An ATM out of balance by more than $100 is reported to the branch manager and th
     ),
     (
         "branch-operations",
-        "branch-hours-and-closures",
-        "Branch Hours and Emergency Closures",
-        "Victor Ramos",
-        "Facilities and security",
-        "2026-06-01",
-        "2.7",
-        "pdf",
-        [],
-        """
-## Standard hours
-
-Branches are open 9:00 to 17:00 Monday through Friday and 9:00 to 12:00 on Saturday. The Las Olas and Weston branches stay open until 18:00 on weekdays.
-
-## Emergency closures
-
-The COO decides on emergency closures. Closures are announced on the website, in the mobile app and in the AI voice agent's greeting within 30 minutes of the decision.
-
-## Hurricanes
-
-Branches close when a hurricane warning is issued for the county and reopen after facilities confirms power, water and safe access.
-""",
-    ),
-    (
-        "branch-operations",
         "hurricane-preparedness",
         "Hurricane Preparedness Plan",
         "Victor Ramos",
-        "Facilities and security",
         "2026-05-28",
         "3.5",
         "pdf",
@@ -1181,9 +1150,13 @@ Each branch checks its shutters, generator fuel and emergency supplies by May 31
 
 When a hurricane watch is issued, branches secure records and move cash above the vault's flood line. When a warning is issued, branches close and staff follow the evacuation orders for their area.
 
+## Emergency closures
+
+The COO decides on emergency closures. Closures are announced on the website, in the mobile app and in the phone line's recorded greeting within 30 minutes of the decision.
+
 ## After the storm
 
-Branch managers report damage within 24 hours. Members affected by a declared disaster may apply for the hardship and payment deferral program.
+Branch managers report damage within 24 hours, and facilities confirms power, water and safe access before a branch reopens. Members affected by a declared disaster may apply for the hardship and payment deferral program.
 """,
     ),
     (
@@ -1191,7 +1164,6 @@ Branch managers report damage within 24 hours. Members affected by a declared di
         "lobby-kiosk-standard",
         "Lobby Kiosk Standard",
         "Kevin Tran",
-        "IT and digital banking",
         "2026-07-15",
         "1.1",
         "docx",
@@ -1199,11 +1171,11 @@ Branch managers report damage within 24 hours. Members affected by a declared di
         """
 ## What the kiosk does
 
-The branch lobby kiosk answers general questions about products, hours and fees. It does not access member accounts and never asks for account numbers or card numbers.
+The branch lobby kiosk answers general questions about products, hours, rates and fees. It does not access member accounts and never asks for account numbers or card numbers.
 
 ## Content
 
-The kiosk answers only from the member-facing collections. Internal procedures, HR policies and compliance documents are not available to it.
+The kiosk uses an API key in the public group, which reads only the Member information collection. Internal procedures, HR policies and compliance documents are not available to it.
 
 ## Maintenance
 
@@ -1215,9 +1187,8 @@ Branch staff wipe the kiosk screen daily and report a kiosk that is offline to t
         "safe-deposit-boxes",
         "Safe Deposit Box Procedures",
         "Victor Ramos",
-        "Facilities and security",
-        "2025-09-22",
-        "1.9",
+        "2026-03-16",
+        "2.0",
         "docx",
         [],
         """
@@ -1257,45 +1228,37 @@ def _text(doc: dict) -> str:
     return (ROOT / "demo" / doc["path"]).read_text(encoding="utf-8")
 
 
+def _doc(
+    file: str, path: str, col: str, title: str, owner: str, reviewed: str, version: str, kind: str, acl: list
+) -> dict:
+    return {
+        "file": file,
+        "path": path,
+        "collection": col,
+        "title": title,
+        "owner": owner,
+        "department": PEOPLE[owner][0],
+        "reviewed": reviewed,
+        "version": version,
+        "type": kind,
+        "acl": acl,
+    }
+
+
 def catalog() -> dict:
-    docs = []
-    for file, title, owner, dept, reviewed, version, kind in ORIGINALS:
-        docs.append(
-            {
-                "file": file,
-                "path": file,
-                "collection": "policies",
-                "title": title,
-                "owner": owner,
-                "department": dept,
-                "reviewed": reviewed,
-                "version": version,
-                "type": kind,
-                "acl": ORIGINAL_ACL.get(file, []),
-            }
-        )
-    for col, slug, title, owner, dept, reviewed, version, kind, acl, _body in DOCS:
-        docs.append(
-            {
-                "file": f"{slug}.md",
-                "path": f"library/{col}/{slug}.md",
-                "collection": col,
-                "title": title,
-                "owner": owner,
-                "department": dept,
-                "reviewed": reviewed,
-                "version": version,
-                "type": kind,
-                "acl": acl,
-            }
-        )
+    docs = [_doc(f, f, col, t, o, r, v, k, ORIGINAL_ACL.get(f, [])) for f, col, t, o, r, v, k in ORIGINALS]
+    docs += [_doc(f"{s}.md", f"library/{c}/{s}.md", c, t, o, r, v, k, a) for c, s, t, o, r, v, k, a, _b in DOCS]
     for d in docs:
         d["passages"] = _passages(_text(d))
-    counts = {c["name"]: sum(d["collection"] == c["name"] for d in docs) for c in COLLECTIONS}
-    passages = {c["name"]: sum(d["passages"] for d in docs if d["collection"] == c["name"]) for c in COLLECTIONS}
+    names = [c["name"] for c in COLLECTIONS]
+    docs.sort(key=lambda d: names.index(d["collection"]))  # stable: originals first within a collection
+    counts = {n: sum(d["collection"] == n for d in docs) for n in names}
+    passages = {n: sum(d["passages"] for d in docs if d["collection"] == n) for n in names}
     return {
         "generated_by": "scripts/sample_library.py",
         "disclaimer": "Fictional documents for a fictional credit union. Not legal, regulatory or HR guidance.",
+        "departments": DEPARTMENTS,
+        "groups": GROUPS,
         "collections": [{**c, "documents": counts[c["name"]], "passages": passages[c["name"]]} for c in COLLECTIONS],
         "documents": docs,
     }  # fmt: skip
@@ -1307,20 +1270,43 @@ def outputs() -> list[tuple[Path, str]]:
     return out
 
 
+def problems() -> list[str]:
+    """Consistency rules the catalog must keep (also enforced by tests/test_sample_library.py)."""
+    out = []
+    for f, *_ in ORIGINALS:
+        if not (ROOT / "demo" / f).is_file():
+            out.append(f"demo/{f} is missing")
+    owners = {d[3] for d in ORIGINALS} | {d[3] for d in DOCS}
+    out += [f"owner {o} is not in PEOPLE" for o in sorted(owners - set(PEOPLE))]
+    out += [f"{o}'s department {d!r} is not in DEPARTMENTS" for o, (d, _r) in PEOPLE.items() if d not in DEPARTMENTS]
+    groups = {e.split(":", 1)[1] for c in COLLECTIONS for e in c["acl"]} | {
+        e.split(":", 1)[1] for acl in [*ORIGINAL_ACL.values(), *(d[7] for d in DOCS)] for e in acl
+    }
+    out += [f"group {g} is not in GROUPS" for g in sorted(groups - set(GROUPS))]
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--check", action="store_true", help="exit 1 if the committed library is stale")
     args = ap.parse_args(argv)
+    bad = problems()
+    for p in bad:
+        print(f"inconsistent library: {p}")
+    if bad:
+        return 1
     files = outputs()
+    expected = {p for p, _ in files if p.suffix == ".md"}
+    extra = [p for p in LIB.rglob("*.md") if p not in expected]
     if args.check:
         stale = [p for p, text in files if not p.exists() or p.read_text(encoding="utf-8") != text]
-        expected = {p for p, _ in files if p.suffix == ".md"}
-        extra = [p for p in LIB.rglob("*.md") if p not in expected]
         for p in stale + extra:
             print(f"{p.relative_to(ROOT)} is stale: run python scripts/sample_library.py")
         if not stale and not extra:
             print(f"demo/library ({len(expected)} documents) and demo/data/library.json are current")
         return 1 if stale or extra else 0
+    for p in extra:  # documents that moved collection or were merged
+        p.unlink()
     for p, text in files:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")

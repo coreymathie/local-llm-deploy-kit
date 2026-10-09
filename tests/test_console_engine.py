@@ -48,7 +48,7 @@ def test_engine_version_matches_the_gateway():
 def test_overview_and_audit_entries_in_the_browser_engine(engine):
     run(engine.ask_as("priya", "policies", "What is the level 3 salary band?"))
     ov = engine.overview()
-    assert ov["documents"] == {"collections": 1, "documents": 11, "passages": 13}
+    assert ov["documents"] == {"collections": 1, "documents": 11, "passages": 14}
     assert ov["requests"]["questions"] == 1 and ov["identities"]["token_users"] == 1
     assert ov["backend"]["name"] == "demo" and ov["audit"]["ok"]
     out = engine.audit_entries(5)
@@ -59,9 +59,9 @@ def test_access_matrix_names_the_personas(engine):
     m = engine.access_matrix("policies")
     rows = {r["persona"] or r["label"]: r for r in m["rows"]}
     hr = next(d["id"] for d in m["documents"] if d["title"] == "hr.md")
-    assert rows["Priya Shah (HR)"]["documents"][hr] == "document_acl:group:hr"
-    assert rows["Dana Ortiz (Engineering)"]["documents"][hr] is None
-    assert rows["Audrey Kim (Internal audit)"]["collection"]["basis"] == "role:reader:policies"
+    assert rows["Priya Shah (Human resources)"]["documents"][hr] == "document_acl:group:hr"
+    assert rows["Dana Ortiz (IT and digital banking)"]["documents"][hr] is None
+    assert rows["Audrey Kim (Internal audit)"]["collection"]["basis"] == "role:reader:*"
     before = auth._calls.copy()
     engine.access_matrix("policies")
     assert auth._calls == before  # building the matrix doesn't spend anyone's rate limit
@@ -87,12 +87,12 @@ def test_policy_change_turns_the_auditors_403_into_200(engine):
     assert run(engine.chat_as("audrey", "hi"))["status"] == 403
     bad = engine.validate_policy({"GATEWAY_OIDC_GROUP_ROLES": {"auditors": ["root"]}})
     assert bad["ok"] is False and bad["errors"][0]["field"] == "GATEWAY_OIDC_GROUP_ROLES.auditors"
-    roles = {**settings.GATEWAY_OIDC_GROUP_ROLES, "auditors": ["reader:policies", "user"]}
+    roles = {**settings.GATEWAY_OIDC_GROUP_ROLES, "auditors": ["reader:*", "user"]}
     out = engine.apply_policy({"GATEWAY_OIDC_GROUP_ROLES": roles})
     assert out["status"] == 200 and list(out["changed"]) == ["GATEWAY_OIDC_GROUP_ROLES"]
     assert run(engine.chat_as("audrey", "hi"))["status"] == 200
     entry = [r["entry"] for r in engine.audit_lines() if r["entry"]["event"] == "policy_changed"][-1]
-    assert entry["payload"]["after"]["GATEWAY_OIDC_GROUP_ROLES"]["auditors"] == ["reader:policies", "user"]
+    assert entry["payload"]["after"]["GATEWAY_OIDC_GROUP_ROLES"]["auditors"] == ["reader:*", "user"]
     assert engine.apply_policy({"GATEWAY_COLLECTION_DEFAULT_ACCESS": "restricted"})["status"] == 200
     assert run(engine.ask_as("kiosk", "policies", "hotel cap"))["status"] == 404
 

@@ -22,7 +22,7 @@ from .conftest import ADMIN, new_key
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "demo"
 HR = "Compensation bands.\n\nThe level 3 salary band is $77,000 to $95,000 per year."
-TRAVEL = "Travel policy.\n\nHotel stays are capped at $180 per night. Meals are reimbursed up to $60 per day."
+TRAVEL = "Travel policy.\n\nHotel stays are capped at $180 per night. Meals are reimbursed up to $75 per day."
 
 
 @pytest.fixture(autouse=True)
@@ -192,8 +192,8 @@ def test_policy_validation_reports_every_problem_with_its_field(client):
 
 def test_applied_policy_takes_effect_immediately_and_is_audited(client):
     seed(client)
-    kiosk = key_with_groups(client, "kiosk", [])
-    assert client.post("/v1/collections/policies/ask", json={"question": "hotel"}, headers=kiosk).status_code == 200
+    app = key_with_groups(client, "intranet-app", [])
+    assert client.post("/v1/collections/policies/ask", json={"question": "hotel"}, headers=app).status_code == 200
     current = client.get("/admin/policy", headers=ADMIN).json()
     assert current["persisted"] is False and set(current["policy"]) == set(console.POLICY_FIELDS)
 
@@ -210,7 +210,7 @@ def test_applied_policy_takes_effect_immediately_and_is_audited(client):
         "GATEWAY_COLLECTION_DEFAULT_ACCESS": "restricted",
         "GATEWAY_RATE_LIMIT_PER_MIN": 500,
     }
-    assert client.post("/v1/collections/policies/ask", json={"question": "hotel"}, headers=kiosk).status_code == 404
+    assert client.post("/v1/collections/policies/ask", json={"question": "hotel"}, headers=app).status_code == 404
     entry = next(e for e in audit.recent(10) if e["event"] == "policy_changed")
     assert entry["payload"] == {
         "before": {"GATEWAY_COLLECTION_DEFAULT_ACCESS": "open", "GATEWAY_RATE_LIMIT_PER_MIN": 60},

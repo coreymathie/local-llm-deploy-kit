@@ -2,7 +2,7 @@
 
 ## Access requests
 
-Vendor accounts are requested by the employee who owns the vendor relationship and approved by IT security. Every vendor account has an expiry date no more than 90 days out.
+Vendor accounts are requested by the employee who owns the vendor relationship and approved by IT security. A vendor account is valid for no more than 90 days and is renewed only at the relationship owner's request.
 
 ## Remote sessions
 

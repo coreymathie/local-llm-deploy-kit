@@ -112,7 +112,6 @@ async function overview(view, S) {
   const hoursPrev = p ? (p.answered * a.minutes_saved_per_answer) / 60 : null;
   const infra = a.infrastructure_per_month_usd * (range / 30);
   const series = (f) => days.map(f);
-  const scale = range / 30;
   const period = `${shortDate(days[0].date)} – ${longDate(days[days.length - 1].date)}`;
   view.innerHTML = head(
     "Usage and impact",
@@ -171,7 +170,9 @@ async function overview(view, S) {
     { key: "answered", label: "Answered with citations", color: "var(--series-1)" },
     { key: "no_answer", label: "Nothing to cite", color: "var(--series-2)" },
   ], { ariaLabel: "Questions per day", width: chartWidth(vol, 1100), height: 230 });
-  top.innerHTML = hbars(data.topics.map((x) => ({ label: x.topic, value: Math.round(x.questions_30d * scale) })), { ariaLabel: "Questions by topic", width: chartWidth(top, 560), fmtValue: num, color: "var(--series-3)", labelWidth: Math.min(260, Math.round(chartWidth(top, 560) * 0.48)) });
+  // Topic counts are summed from the same daily rows as the question totals, so every range adds up.
+  const topicTotals = data.topics.map((x) => ({ label: x.topic, value: days.reduce((a, d) => a + ((d.topics || {})[x.topic] || 0), 0) })).sort((a, b) => b.value - a.value);
+  top.innerHTML = hbars(topicTotals, { ariaLabel: "Questions by topic", width: chartWidth(top, 560), fmtValue: num, color: "var(--series-3)", labelWidth: Math.min(260, Math.round(chartWidth(top, 560) * 0.48)) });
 }
 
 function deptTable(rows) {
@@ -238,7 +239,7 @@ async function overviewSession(view, S) {
   <div class="card" style="margin-top:16px">
     <div class="card-head"><div><h2>What to try</h2><p>Each card opens a screen where the gateway's controls do the work.</p></div></div>
     <div class="tries">
-      <a class="try" href="#/chat"><b>Same question, different answers</b><span>Ask for the level 3 salary band as Priya Shah (HR), then as Dana Ortiz (Engineering). Compare side by side.</span></a>
+      <a class="try" href="#/chat"><b>Same question, different answers</b><span>Ask for the level 3 salary band as Priya Shah (Human resources), then as Dana Ortiz (IT and digital banking). Compare side by side.</span></a>
       <a class="try" href="#/documents"><b>Change who can read a document</b><span>Edit an access list and watch the access matrix and the next answer change.</span></a>
       <a class="try" href="#/audit"><b>${A.caps.tamper ? "Tamper with the audit log" : "Verify the audit chain"}</b><span>${A.caps.tamper ? "Edit a line like an attacker would, then verify: the chain names the line." : "Re-walk the SHA-256 chain and inspect every decision."}</span></a>
       <a class="try" href="#/models"><b>${A.caps.simulatedModels ? "Break a model pin" : "Check model pins"}</b><span>${A.caps.simulatedModels ? "Pin served models, simulate a re-pull, and see enforce mode refuse it." : "Compare served models with the lock file and view the ML-BOM."}</span></a>
@@ -685,7 +686,7 @@ function scenarios(S) {
   if (S.A.mode === "demo") {
     return [
       { id: "audrey-chat", label: "Auditor uses raw chat", persona: "audrey", kind: "model", q: "Summarize the travel policy.", hint: "Map auditors to [\"user\"] and apply: 403 becomes 200." },
-      { id: "kiosk-hotel", label: "Kiosk key asks the hotel cap", persona: "kiosk", kind: "rag", q: "What is the hotel cap per night?", hint: "Set GATEWAY_COLLECTION_DEFAULT_ACCESS to restricted: the kiosk loses access (404)." },
+      { id: "kiosk-staff", label: "Kiosk key asks a staff question", persona: "kiosk", kind: "rag", q: "What is the hotel cap per night?", hint: "Staff policies admits group:staff only and the kiosk's key is in group public, so it gets 404 whatever you change here: access lists are not policy settings. Lower GATEWAY_RATE_LIMIT_PER_MIN to 1 and apply to see the kiosk's key throttled (429) instead." },
       { id: "dana-band", label: "Engineer asks for the salary band", persona: "dana", kind: "rag", q: "What is the level 3 salary band?", hint: "Document ACLs aren't policy settings: the HR document stays hidden whatever you change here." },
       { id: "retrieval", label: "Ranking for a vague question", persona: "admin", kind: "rag", q: "receipt for a lunch", hint: "Switch GATEWAY_RETRIEVAL_MODE to bm25 or add the lexical reranker and compare the source order." },
     ];
@@ -791,11 +792,11 @@ async function policies(view, S) {
 // Evals
 // =============================================================================================
 
-const METRICS = [["recall@1", "recall@1"], ["recall@4", "recall@4"], ["mrr", "MRR"], ["citation_accuracy", "citation accuracy"], ["answer_contains", "answer contains"]];
+const METRICS = [["recall@1", "recall@1"], ["recall@4", "recall@4"], ["mrr", "MRR"], ["citation_accuracy", "citation accuracy"], ["answer_contains", "answer contains"], ["decline_accuracy", "decline accuracy"]];
 
 async function evals(view, S) {
   const A = S.A;
-  view.innerHTML = head("Answer quality", "How often the assistant finds the right document and cites only it, measured on a fixed test set and checked on every change before it ships.<span class=\"tech-only\"> Retrieval quality gate from <code>scripts/rag_eval.py</code> over the bundled golden set, the same numbers CI enforces against <code>evals/thresholds.json</code>.</span>",
+  view.innerHTML = head("Answer quality", "How often the assistant finds the right document and cites only it, measured on a fixed test set and checked on every change before it ships.<span class=\"tech-only\"> Quality gate from <code>scripts/rag_eval.py</code> over the sample library and <code>evals/golden/questions.jsonl</code>, the same numbers CI enforces against <code>evals/thresholds.json</code>.</span>",
     A.caps.runEval ? `<button class="primary" id="runEval">Re-run in your browser</button>` : "") + `<div id="ev">${loading()}</div>`;
   let data;
   try { data = await A.evals(); } catch (e) { $("#ev", view).innerHTML = errorBox({ detail: String(e.message || e) }); return; }
@@ -806,12 +807,12 @@ async function evals(view, S) {
   const gatePass = data.problems.length === 0;
   const leaks = configs.reduce((s, k) => s + rep.results[k].acl_leaks, 0);
   $("#ev", view).innerHTML = `
-  <div class="banner info"><strong>Measured, not simulated.</strong> ${rep.questions} test questions over a separate benchmark library of ${rep.documents} documents (${rep.restricted_documents} restricted), kept apart from the Cypress Harbor library so the test can't be tuned to it. It measures finding and citing the right document; it isn't a test of a large language model's writing.<span class="tech-only"> k=${rep.k}. Embedder: ${esc(rep.embedder)}. Answers: ${esc(rep.answerer)}. Produced by <code>${esc(data.generated_by)}</code>.</span></div>
+  <div class="banner info"><strong>Measured, not simulated.</strong> ${rep.questions} questions asked by the people on the Chat screen against the Cypress Harbor library itself: ${rep.documents} documents in ${rep.collections} collections, ${rep.restricted_documents} of them restricted. ${rep.answerable} have an answer in a document the asker may read; ${rep.declines} should be declined, because nothing answers them or the answer is in a document the asker is not cleared for. The questions are paraphrased the way staff ask and were written after the library, which was not tuned to them. It measures finding, citing and declining; it isn't a test of a large language model's writing.<span class="tech-only"> k=${rep.k}. Embedder: ${esc(rep.embedder)}. Answers: ${esc(rep.answerer)}. Produced by <code>${esc(data.generated_by)}</code>.</span></div>
   <div class="grid kpis four" style="margin-top:16px">
     <div class="card kpi"><div class="label">Release check</div><div class="value ${gatePass ? "ok" : "bad"}" id="gate">${gatePass ? "Pass" : "Fail"}</div><div class="sub">${gatePass ? "every gated metric meets its threshold" : esc(data.problems.join("; "))}</div></div>
     <div class="card kpi"><div class="label">ACL leaks</div><div class="value ${leaks ? "bad" : "ok"}">${leaks}</div><div class="sub">times a restricted document reached someone not cleared for it (must be 0)</div></div>
     <div class="card kpi"><div class="label">Right document ranked first</div><div class="value">${pct(r["recall@1"])}</div><div class="sub">in the top ${rep.k}: ${pct(r[`recall@${rep.k}`])}<span class="tech-only"> · recall@1 · MRR ${r.mrr.toFixed(3)} · ${esc(S.evalConfig)}</span></div></div>
-    <div class="card kpi"><div class="label">Cites only the right document</div><div class="value">${pct(r.citation_accuracy)}</div><div class="sub">answer has the key fact: ${pct(r.answer_contains)}</div></div>
+    <div class="card kpi"><div class="label">Cites only the right document</div><div class="value">${pct(r.citation_accuracy)}</div><div class="sub">answer has the key fact: ${pct(r.answer_contains)} · declines when it should: ${pct(r.decline_accuracy)}</div></div>
   </div>
   <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>By search method</h2><p>Keyword (bm25), meaning (vector), both combined (hybrid), and with re-ranking</p></div></div>
     <div id="evalChart"></div>
@@ -822,9 +823,9 @@ async function evals(view, S) {
       }).join("")}<td class="num">${rep.results[k].acl_leaks}</td></tr>`).join("")}
     </tbody></table></div>
   </div>
-  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Questions not answered perfectly · ${esc(S.evalConfig)}</h2><p>Right document first, cited alone, and the key fact present. Click a search method above to switch.</p></div></div>
-    ${r.failures.length ? `<div class="table-wrap"><table><thead><tr><th>ID</th><th>Question</th><th>Expected</th><th class="num">Rank</th><th>Cited</th><th>Phrase</th></tr></thead><tbody>
-      ${r.failures.map((f) => { const q = data.questions[f.id] || {}; return `<tr><td class="mono small">${esc(f.id)}</td><td>${esc(q.question)}</td><td class="small">${esc(q.doc)}</td><td class="num">${f.rank || "–"}</td><td class="small">${esc(f.cited.join(", ") || "none")}</td><td>${f.contains ? '<span class="pill ok">yes</span>' : '<span class="pill bad">no</span>'}</td></tr>`; }).join("")}
+  <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Questions not answered perfectly · ${esc(S.evalConfig)}</h2><p>Right document first, cited alone, and the key fact present; or, for a question to decline, "I don't know" with no citation. Click a search method above to switch.</p></div></div>
+    ${r.failures.length ? `<div class="table-wrap"><table><thead><tr><th>ID</th><th>Asked by</th><th>Question</th><th>Expected</th><th class="num">Rank</th><th>Cited</th><th>Result</th></tr></thead><tbody>
+      ${r.failures.map((f) => { const q = data.questions[f.id] || {}; const decline = !q.doc; return `<tr><td class="mono small">${esc(f.id)}</td><td class="small">${esc(personaName(S, q.persona || ""))}</td><td>${esc(q.question)}</td><td class="small">${decline ? "decline" : esc(q.doc)}</td><td class="num">${f.rank || "–"}</td><td class="small">${esc(f.cited.join(", ") || "none")}</td><td>${decline ? '<span class="pill bad">answered</span>' : f.contains ? '<span class="pill ok">fact present</span>' : '<span class="pill bad">fact missing</span>'}</td></tr>`; }).join("")}
     </tbody></table></div>` : empty("No misses.")}
   </div>
   <div id="browserRun"></div>`;
