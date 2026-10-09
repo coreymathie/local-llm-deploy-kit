@@ -4,12 +4,23 @@
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-**A private ChatGPT for your documents, with the access control, audit trail and model governance a
-compliance team asks for.** An OpenAI-compatible gateway in front of a local model server (**Ollama** on a
-laptop or small server, or **vLLM / SGLang / TGI / NVIDIA NIM** on a GPU host), cited answers over
-permission-aware hybrid retrieval, per-application API keys and **OIDC single sign-on with group-based
-roles**, rate limits, PII redaction, a **tamper-evident audit log**, model pinning with a CycloneDX ML-BOM,
-Prometheus metrics, OpenTelemetry GenAI spans, and a product console.
+**Private LLM Platform is a self-hosted LLM platform for organizations that work with regulated documents,
+where each person may see only what they need to know and every answer must be traceable after the fact.
+It places an OpenAI-compatible gateway in front of a self-hosted model server, enforces document
+permissions in retrieval before any passage is ranked, and records each decision in a tamper-evident,
+hash-chained audit log. Identity, access, model integrity and evidence are the gateway's job, not the
+model's, and nothing leaves the host except calls to the configured inference server.**
+
+## At a glance
+
+| | |
+|---|---|
+| **Problem** | Regulated teams can't send prompts or documents to a public API, and a bare model server has no identity, limits, access control or audit trail. |
+| **Architecture** | One FastAPI gateway (OpenAI-compatible API) in front of Ollama or any OpenAI-compatible server (vLLM, SGLang, TGI, NVIDIA NIM). SQLite for keys, documents and vectors; a hash-chained JSONL audit log. |
+| **Key decisions** | Pluggable inference backend; on-host embeddings with hybrid BM25 + vector retrieval; OIDC tokens alongside API keys; envelope encryption; pinned model digests. Each recorded as an ADR with its trade-off. |
+| **Controls** | API keys and OIDC SSO with group roles; collection and document access lists applied before scoring; rate limits; PII redaction; SHA-256 audit chain; model lock file with an off/warn/enforce policy and a CycloneDX ML-BOM. |
+| **Evidence** | 230 automated tests; a RAG eval gate in CI with 0 ACL leaks; hybrid citation accuracy 0.837 → 0.884 on the golden set; a 41-check headless browser smoke test across both console modes; 8 ADRs. |
+| **Try it** | [Live console](https://coreymathie.github.io/private-llm-platform/demo/): the gateway's real Python modules in your browser through Pyodide. Locally, `docker compose up` needs no model or GPU. |
 
 **▶ [Open the live console](https://coreymathie.github.io/private-llm-platform/demo/)**: the gateway's real
 Python modules (keys and rate limiting, roles and permission-aware retrieval, citations, the audit hash
@@ -22,103 +33,33 @@ the page. There is no LLM in the browser; answers are extractive and labelled as
 
 ## Contents
 
-[Console](#console) · [Problem](#the-problem) · [Architecture](#architecture) · [Key decisions](#key-decisions) ·
-[Security and governance](#security-and-governance) · [Identity and roles](#identity-and-roles) · [Quality](#quality) ·
-[Observability](#observability) · [Benchmarks](#benchmarks) · [Failure modes](#failure-modes) ·
-[Quickstart](#quickstart) · [Document Q&A](#document-qa) · [Audit log](#the-audit-log) ·
-[Configuration](#configuration) · [Roadmap](#roadmap)
-
-## Console
-
-One set of static files in [`demo/`](demo/) (`index.html`, `app.js`, `assistant.js`, `screens.js`,
-`adapters.js`, `ui.js`, `styles.css`) runs in two modes:
-
-- **Demo** (GitHub Pages): `DemoAdapter` loads Pyodide 0.26.4 and runs the gateway's own modules through
-  `demo/engine.py`, with a simulated backend (hashed bag-of-words embeddings, extractive answers, a stand-in
-  Ollama model inventory). The header says *Demo*.
-- **Live**: the gateway serves the same files at `/console/` and `LiveAdapter` calls its HTTP API with the
-  admin key or token you enter on Settings (kept in memory, or in `sessionStorage` if you ask). The header
-  says *Live · connected to &lt;host&gt;*. Mode comes from `GET ./api-mode` (a static file says `demo`; the
-  gateway answers `live`) or `?mode=demo|live`.
-
-The console is set in a sample business so the platform can be judged the way an employer would use it:
-**Cypress Harbor Credit Union**, a *fictional* credit union (340 employees in 10 departments, 11 branches, one
-on-prem GPU server). It opens on **Harbor Assistant**, the employee-facing chat, the way an internal
-Copilot-style assistant does; administration and governance sit behind it in the sidebar.
-
-- **Library**: 57 documents in five collections (staff policies, member services, lending, compliance, branch
-  operations), each with an owner, department, version and review date. 44 come from
-  [`scripts/sample_library.py`](scripts/sample_library.py) (seeded, checked in CI); HR compensation, the
-  engineering payments runbook, the BSA procedure and OFAC screening are restricted by access list.
-- **People**: Priya Shah (HR), Dana Ortiz (engineering), Marcus Bell (BSA compliance), Audrey Kim (internal
-  audit) and a branch lobby kiosk. API keys and the bootstrap admin appear in the technical view.
-- **Usage**: 90 days from [`scripts/generate_sample_company.py`](scripts/generate_sample_company.py), labelled
-  **Sample** everywhere, apart from **measured** results (Answer quality, Benchmarks) and the **simulated**
-  requests made in the tab.
-
-**Business and technical views.** The header switch (or `?view=technical`) chooses the audience. The business
-view shows what employees and administrators see: plain-language access ("Restricted to the hr group"),
-document titles, friendly audit-event names. The technical view adds retrieval scores and modes, API keys and
-token limits, raw access-list entries, model digests, the lock file and ML-BOM, and the modules running in the
-tab. Light and dark themes follow the system and can be switched in the header.
-
-**Ask across everything you can read.** *All sources I can read* (the default) searches every collection the
-person may read: the access decision runs per collection before any passage is scored, then passages are
-ranked together. An answer quotes only sentences from its best-matching document; a question nothing in the
-library answers well gets "I couldn't find that in the documents you can access" instead of an unrelated
-quote (a relevance floor on vector similarity; console only, not applied to the eval).
-
-Navigation: screens grouped as Assistant, Admin and Governance, breadcrumbs, a command palette
-(<kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>K</kbd> or <kbd>/</kbd>), `g` + letter shortcuts (<kbd>?</kbd> lists them),
-and a collapsible sidebar.
-
-![Usage and impact: questions answered, answered from documents, employees using it, hours saved, restricted content withheld, cost per answer, and adoption by department for the sample credit union](docs/img/console-business.png)
-
-| Screen | What it does |
-|---|---|
-| Ask | Chat with streamed answers, numbered citations and source cards; a citation opens the document with the quoted passage highlighted, its owner, version, review date and who may read it. Conversation history, suggested questions per person, copy / ask again / helpful / not helpful, ask as someone else or compare two people side by side, search one collection or all. Technical view: retrieval mode, reranker, passage count, model-only chat (readers get 403) and a retrieval-details table per answer (scores, access rule, injection flags, audit line) |
-| Usage and impact | For the sample credit union over 7, 30 or 90 days: questions answered, share answered from documents with citations, employees using it, hours saved and cost per answer (with stated assumptions), restricted content withheld, member data sent outside (zero), answers rated helpful, each against the previous period; questions per day; adoption by department; topics; response time; knowledge-base collections and who may read them; governance checks; recent activity |
-| Usage and impact › This session | Requests, identities, collections and documents, audit status and access decisions for what was done in this tab; guided "what to try" cards |
-| Documents | The library with titles, owners and review dates, a filter, add or upload, per-collection and per-document access lists, and a plain-language access matrix of who can read which document |
-| People and keys | People and applications with their roles and groups; API keys with usage against the rate limit, burst test and revoke (technical view); SSO group-to-role mapping |
-| Audit log | The hash-chained log with friendly event names, filters, search and paging; each row opens a decision timeline (sign-in, access decision, retrieval, sources, answer, hashes). "Log intact" check; demo mode adds a tamper-detection test |
-| Access policy | What is in effect now in plain language, then the runtime policy as JSON, validated with the gateway's own types and `identity.check_role`, applied and audited, with a "try a change" scenario before and after |
-| Models | Backend health, served models, off/warn/enforce policy; technical view adds digests, lock-file verification and validation, and ML-BOM model components |
-| Answer quality | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json` (measured on the benchmark library), questions not answered perfectly; demo mode re-runs the eval in the browser and compares |
-| Settings | Mode, credential (live), modules running in the tab (technical view), and what is simulated |
-
-A five-step guided tour runs on the first visit. **Run it live:**
-
-```bash
-docker compose up        # then open http://localhost:8080/console/
-docker compose logs gateway | grep "Bootstrap admin"     # the admin key to paste on Settings
-```
-
-That stack needs no model or GPU: the gateway talks to `mock-llm`, which is
-[`scripts/mock_openai_server.py`](scripts/mock_openai_server.py) in **simulated** mode (extractive answers,
-hashed embeddings; not a language model). Usage and impact › This session's *Load sample data* adds the sample library and the
-keys through the API. For real answers, Ollama stays the default backend:
-`docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`, then pull `llama3.1:8b` and
-`nomic-embed-text` (see the top of `docker-compose.yml`). The older single-file admin page is still served
-at `/admin`.
-
-New endpoints for the console (all admin-only): `GET /admin/overview`, `GET /admin/audit/entries`,
-`GET /admin/access-matrix?collection=`, `GET /admin/policy`, `POST /admin/policy/validate`,
-`PUT /admin/policy` (in memory, audited as `policy_changed`; a restart reads the environment again),
-`GET /admin/rate-limits`, `POST /admin/models/lock/validate`, `GET /admin/models/mlbom`; plus
-`GET /console/api-mode` and per-request `retrieval_mode` / `reranker` on `/ask`.
+[Problem](#the-problem) · [Architecture](#architecture) · [Key decisions](#key-decisions) ·
+[Security and governance](#security-and-governance) · [Identity and roles](#identity-and-roles) ·
+[Quality](#quality-measured) · [Failure modes](#failure-modes) · [Observability](#observability) ·
+[Benchmarks](#benchmarks) · [Console](#console) · [Quickstart](#quickstart) · [Document Q&A](#document-qa) ·
+[Model supply chain](#model-supply-chain) · [Audit log](#the-audit-log) · [Configuration](#configuration) ·
+[Roadmap](#roadmap) · [Layout](#layout) · [Running the checks](#running-the-checks) · [Author](#author)
 
 ## The problem
 
 Healthcare, legal and finance teams often can't send prompts or documents to a public API. Running a
 model locally is easy now; letting *other people and applications* use it safely is not. A bare model
 server port has no authentication, no per-application identity, no limits, no record of who asked what,
-and no way to show an auditor that the record wasn't edited. When document Q&A is added, two more
-questions follow: *which documents did this answer rely on*, and *what happens when a document contains
-instructions*?
+and no way to show an auditor that the record wasn't edited. Document Q&A raises two more questions:
+*which documents did this answer rely on*, and *what happens when a document contains instructions*?
 
-This kit answers those with a small, readable codebase (one FastAPI process, SQLite, a JSONL log) that
-installs on a laptop and also fronts a GPU inference server.
+The design constraints that follow:
+
+- **Residency.** No outbound calls except the configured inference server; caller keys are never forwarded
+  upstream.
+- **Need-to-know retrieval.** A caller retrieves only what it may read, and hidden documents influence
+  nothing: not the ranking, the prompt, the citations or the counts.
+- **Verifiable evidence.** Every document question and admin action lands in a log whose integrity an
+  auditor can check.
+- **One control plane, two deployment shapes.** The same keys, audit, redaction, RAG and metrics in front
+  of a laptop or a shared GPU server.
+- **Small enough to review.** One FastAPI process, SQLite and a JSONL log; it installs on a laptop and also
+  fronts a GPU inference server.
 
 ## Architecture
 
@@ -155,27 +96,39 @@ flowchart LR
   R --> RED --> AUD --> LOG -.-> WORM
 ```
 
-A chat request: the key is checked against SQLite and the per-key sliding-window limiter; the request
-is mapped to the configured backend; the response (or SSE stream) is mapped back to the OpenAI format;
-usage is counted per key; and, if enabled, the prompt and answer are redacted and appended to the hash
-chain. A document question adds retrieval (cosine similarity over vectors in SQLite), a prompt that
-treats passages as data, citation tracking, injection flags, and an always-on audit entry listing the
-passages used.
+**Chat request path.** The caller's API key is checked against SQLite (or its OIDC token is verified
+against the IdP's cached JWKS) and against the per-caller sliding-window limiter; the request is mapped to
+the configured backend; the response (or SSE stream) is mapped back to the OpenAI format; usage is counted
+per key; and, if enabled, the prompt and answer are redacted and appended to the hash chain.
+
+**Document question path.** The access decision runs first, in SQL, so passages the caller may not read
+are never loaded. Retrieval then ranks the remaining passages (BM25 and cosine similarity over vectors in
+SQLite, fused with Reciprocal Rank Fusion), the prompt treats passages as data, citations are tracked,
+injection heuristics are flagged, and an always-on audit entry lists the passages used.
+
+**Deliberate limits.** The rate limiter and the audit writer are process-local, so the gateway runs as one
+process per host (the Helm schema caps `replicaCount` at 1). Horizontal scaling with Postgres and a shared
+rate-limit store is on the [roadmap](#roadmap).
 
 ## Key decisions
 
-| ADR | Decision |
-|---|---|
-| [0001](docs/adr/0001-inference-backend.md) | Ollama by default; any OpenAI-compatible server (vLLM, SGLang, TGI, NIM) as a pluggable, instrumented backend with an unchanged gateway API |
-| [0002](docs/adr/0002-local-embeddings-on-host-vector-store.md) | Local embeddings, vectors in the gateway's SQLite file, exact cosine search; ANN index and hybrid search when scale demands |
-| [0003](docs/adr/0003-audit-log-hash-chain-vs-worm.md) | Hash-chained JSONL log on the host for tamper evidence, WORM storage for retention (and for the chain's unprotected tail) |
-| [0004](docs/adr/0004-prompt-injection-defense-in-depth.md) | Prompt-injection guard as defense in depth (prompt separation, heuristic flags, no tools or secrets in context, curated sources), not a fix |
-| [0005](docs/adr/0005-oidc-identity-and-roles.md) | OIDC access tokens verified locally against the IdP's JWKS, alongside API keys; roles (admin, user, reader:&lt;collection&gt;) from IdP groups |
-| [0006](docs/adr/0006-hybrid-retrieval-and-rag-evals.md) | Hybrid BM25 + vector retrieval fused with Reciprocal Rank Fusion, pluggable reranker, RAG eval gate in CI |
-| [0007](docs/adr/0007-envelope-encryption-at-rest.md) | Envelope encryption for passages, vectors and audit text with a pluggable key provider; keys never in backups |
-| [0008](docs/adr/0008-model-pinning-and-ml-bom.md) | Pinned model digests verified against what is served, off/warn/enforce policy, CycloneDX ML-BOM |
+Each decision is an ADR in [`docs/adr/`](docs/adr/) with context, consequences, alternatives considered,
+and the code and tests where it lives. The trade-off column is taken from each ADR's consequences.
+
+| ADR | Decision | Trade-off |
+|---|---|---|
+| [0001](docs/adr/0001-inference-backend.md) | Ollama by default; any OpenAI-compatible server (vLLM, SGLang, TGI, NIM) as a pluggable, instrumented backend with an unchanged gateway API | Chat and embeddings share one base URL, so document Q&A on vLLM needs an embedding endpoint at that URL; compatibility is tested against mocked OpenAI-format HTTP, not live servers |
+| [0002](docs/adr/0002-local-embeddings-on-host-vector-store.md) | Local embeddings, vectors in the gateway's SQLite file, exact cosine search; ANN index and hybrid search when scale demands | Every question scores every passage in the collection: fine for thousands of passages, while a large library needs an ANN index (not implemented) |
+| [0003](docs/adr/0003-audit-log-hash-chain-vs-worm.md) | Hash-chained JSONL log on the host for tamper evidence, WORM storage for retention (and for the chain's unprotected tail) | The chain alone doesn't protect the tail: someone with write access can rewrite the newest entries and recompute their hashes. It proves integrity, not authenticity (entries are not signed) |
+| [0004](docs/adr/0004-prompt-injection-defense-in-depth.md) | Prompt-injection guard as defense in depth (prompt separation, heuristic flags, no tools or secrets in context, curated sources), not a fix | A model can still follow injected text, and a poisoned document's false claims can be quoted with a citation; flags don't block, so paraphrased payloads go unflagged |
+| [0005](docs/adr/0005-oidc-identity-and-roles.md) | OIDC access tokens verified locally against the IdP's JWKS, alongside API keys; roles (admin, user, reader:&lt;collection&gt;) from IdP groups | No token introspection: group changes take effect with the next token, so token lifetime is the revocation delay. No login flow or SCIM; users and groups exist only in tokens |
+| [0006](docs/adr/0006-hybrid-retrieval-and-rag-evals.md) | Hybrid BM25 + vector retrieval fused with Reciprocal Rank Fusion, pluggable reranker, RAG eval gate in CI | BM25 tokenizes every candidate passage on each question (no inverted index); `score` in `/ask` responses is now the final ranking score, not cosine similarity |
+| [0007](docs/adr/0007-envelope-encryption-at-rest.md) | Envelope encryption for passages, vectors and audit text with a pluggable key provider; keys never in backups | About 40–50 ms more per question to decrypt 3,883 passages on a 2-vCPU host; titles, access lists and API keys stay readable on disk |
+| [0008](docs/adr/0008-model-pinning-and-ml-bom.md) | Pinned model digests verified against what is served, off/warn/enforce policy, CycloneDX ML-BOM | A digest proves the bytes match the pin, not who produced them (signature verification is roadmap); between verifications the backend could serve something else |
 
 ## Security and governance
+
+Each concern maps to a control in code and a test in the suite.
 
 | Concern | Control | Where |
 |---|---|---|
@@ -193,22 +146,24 @@ passages used.
 
 - [Threat model](docs/threat-model.md): STRIDE and the OWASP Top 10 for LLM Applications (2025), each
   mapped to a control, a test, and the residual risk.
-- [Controls mapping](docs/controls.md): HIPAA 45 CFR 164.312(a)–(e), SOC 2 CC6/CC7, NIST AI RMF and
-  NIST AI 600-1, ISO/IEC 42001 Annex A, with code and test per row and the gaps marked as roadmap.
+- [Controls mapping](docs/controls.md): mapped to HIPAA 45 CFR 164.312(a)–(e), SOC 2 CC6/CC7, NIST AI RMF and
+  NIST AI 600-1, and ISO/IEC 42001 Annex A, with code and test per row and the gaps marked as roadmap.
 - [Compliance notes](docs/compliance.md): profiles, WORM retention, air-gap install, monthly review.
 - [Operations](docs/operations.md): encryption at rest, key rotation, backup and restore, RTO/RPO guidance.
 - [Kubernetes](docs/kubernetes.md): Helm chart, NetworkPolicy, GPU values, air-gapped bundle.
 
-Not implemented yet, and stated as such everywhere: SCIM provisioning and a login flow in the admin page
-(it accepts a pasted token), ACL sync from source systems, a KMS key provider (only a local keyring ships;
-API keys are stored unhashed in SQLite), model *signature* verification (digests are pinned and checked,
-provenance is not). See [Roadmap](#roadmap).
+**Known gaps**, stated as such everywhere: SCIM provisioning and a login flow in the admin page (it accepts
+a pasted token), ACL sync from source systems, a KMS key provider (only a local keyring ships; API keys are
+stored unhashed in SQLite), and model *signature* verification (digests are pinned and checked, provenance
+is not). See [Roadmap](#roadmap).
 
 ## Identity and roles
 
-API keys work as before. With `GATEWAY_OIDC_ENABLED=true` the gateway also accepts access tokens (JWTs)
-from your identity provider on the same `Authorization: Bearer` header, verifies them locally against the
-issuer's JWKS, and maps the token's groups to roles ([ADR 0005](docs/adr/0005-oidc-identity-and-roles.md)).
+API keys remain the identity for applications. With `GATEWAY_OIDC_ENABLED=true` the gateway also accepts
+access tokens (JWTs) from your identity provider on the same `Authorization: Bearer` header, verifies them
+locally against the issuer's JWKS, and maps the token's groups to roles
+([ADR 0005](docs/adr/0005-oidc-identity-and-roles.md)). Access is managed in the IdP, not in a second user
+database.
 
 | Role | Granted to | Allows |
 |---|---|---|
@@ -225,10 +180,11 @@ GATEWAY_OIDC_GROUP_ROLES='{"llm-admins": ["admin"], "staff": ["user"], "hr-team"
 
 `GET /v1/me` shows how the gateway sees the caller (kind, label, roles, groups, readable collections);
 `GET /admin/users` lists token users with their usage. The admin page accepts an API key or a pasted
-access token and shows only the cards the role allows. A valid token whose groups map to no role gets
-`403`; if the IdP can't be reached before its keys were ever fetched, token requests get `503`.
+access token and shows only the cards the role allows. Failure handling is explicit: a valid token whose
+groups map to no role gets `403`, and if the IdP can't be reached before its keys were ever fetched, token
+requests get `503`.
 
-## Quality
+## Quality (measured)
 
 - **230 automated tests** (186 through v0.6, 32 added in v0.7, 12 since; parametrized cases counted individually),
   all passing, run in CI with `ruff check`, `ruff format --check`, `shellcheck` and (CI only) `helm lint`.
@@ -237,8 +193,8 @@ access token and shows only the cards the role allows. A valid token whose group
 - **RAG evals gate CI**: `scripts/rag_eval.py --check` runs the real ingestion, access-control and
   retrieval code over a bundled golden set (12 fictional documents, 2 of them restricted, 43 questions)
   and fails on a drop below `evals/thresholds.json` or any ACL leak. Measured at k=4 with the demo's
-  hashed bag-of-words embedder (not a neural model) and extractive answerer (no LLM), so a regression
-  baseline rather than a quality claim ([ADR 0006](docs/adr/0006-hybrid-retrieval-and-rag-evals.md)):
+  hashed bag-of-words embedder (not a neural model) and extractive answerer (no LLM), so the numbers are a
+  regression baseline, not a quality claim ([ADR 0006](docs/adr/0006-hybrid-retrieval-and-rag-evals.md)):
 
 | Configuration | recall@1 | recall@4 | MRR | citation accuracy | answer contains | ACL leaks |
 |---|---:|---:|---:|---:|---:|---:|
@@ -247,6 +203,8 @@ access token and shows only the cards the role allows. A valid token whose group
 | `hybrid+none` | 0.954 | 1.000 | 0.977 | 0.884 | 0.977 | 0 |
 | `hybrid+lexical` | 1.000 | 1.000 | 1.000 | 0.907 | 0.954 | 0 |
 
+- Hybrid citation accuracy was 0.837 in the previous published run and is 0.884 now (Unreleased section of the
+  [CHANGELOG](CHANGELOG.md)); a test checks that the published table matches a fresh run.
 - Docs are tested too: every `tests/…::test_name` and `gateway/…::symbol` referenced in `docs/` and this
   README must exist (`tests/test_docs.py`), and every metric the Grafana dashboard queries must be
   exported (`tests/test_metrics.py`).
@@ -271,6 +229,33 @@ access token and shows only the cards the role allows. A valid token whose group
 | `test_console.py`, `test_console_engine.py` | Console endpoints (overview, audit entries, access matrix, runtime policy with validation, effect and audit, rate-limit window, lock validation, ML-BOM), admin-only access, per-request retrieval switches, the simulated mock backend and the compose stack end to end, eval data drift, page assets; the browser engine's console calls (pin, re-pull, enforce, policy, in-browser eval) |
 | `test_sample_library.py`, `test_sample_company.py` | The demo library and usage file are reproducible from their seeds and consistent with each other; every document has an owner and review date; *All sources* answers from the right collection, still hides restricted documents (OFAC visible to compliance only), and declines off-topic questions instead of quoting a passage |
 | `test_loadtest.py`, `test_demo_engine.py`, `test_deploy_config.py`, `test_docs.py`, `test_ingest_folder.py` | Load-test math and an in-process run; demo engine; compose/profile sanity; doc references; folder ingest |
+
+## Failure modes
+
+The design fails closed on identity, model integrity and encryption, and surfaces backend failures before a
+response starts rather than mid-stream.
+
+| Situation | Behavior | Notes |
+|---|---|---|
+| Inference server down or unreachable | `502 model runtime unavailable: <error>`; `/health` reports `backend_ok: false`; `gateway_backend_errors_total` increments | For streaming too: the first event is read before the response starts, so clients get a 502, not a broken 200 stream |
+| Inference server returns an error | Status and body passed through (e.g. 404 unknown model) | Same contract as v0.4 |
+| Stream fails after the first token | The stream ends early; usage, token metrics and the `completion` audit entry for that request are not recorded | Not retried; the backend error is counted in `gateway_backend_errors_total` |
+| Key over its limit | `429 rate limit exceeded (N/min)`, counted per key label in metrics | Limiter is in memory, per process |
+| More than one gateway process | Each process enforces its own limit (effective limit × N); audit appends are serialized per process only | Run one process per host, or add a shared store (roadmap). The Helm schema caps `replicaCount` at 1 |
+| Revoked or unknown key | `401` | |
+| Expired, forged or wrong-audience token | `401` with `WWW-Authenticate: Bearer error="invalid_token"` | Detail says which check failed |
+| Identity provider unreachable | Cached signing keys keep working for one more cache period (`GATEWAY_OIDC_JWKS_CACHE_SECONDS`), then token requests get `503`; API keys are unaffected | No keys fetched yet: `503` immediately |
+| IdP rotates its signing key | Unknown `kid` triggers one JWKS refetch (at most every 30 s); retired keys stop working after the next refetch | |
+| `/v1/pull` with a non-Ollama backend | `501` | The inference server owns its models |
+| Model not pinned, or its digest changed (`GATEWAY_MODEL_POLICY=enforce`) | `403 model 'x' is not allowed by the model policy (unpinned \| mismatch \| missing \| error)`; audited `model_verification` | `warn` serves it, logs once per verification and counts `gateway_model_policy_decisions_total` |
+| Backend unreachable during model verification | Startup continues after at most 10 s; under `enforce` requests get `403 (error)` until verification succeeds | Fails closed |
+| Audit file edited | `GET /admin/audit/verify` returns the first bad line | Rewriting the newest entries isn't detectable without the WORM copy (ADR 0003) |
+| Caller lacks access to a collection or document | Same `404`/empty list as a missing collection; denial audited | No existence oracle through the API |
+| Poisoned document | Passage flagged (`injection_flags`); its instructions are not supposed to be followed, but its claims can be cited | ADR 0004; only admins can add documents |
+| Large collections | Exact search scores every readable passage on each question, and BM25 tokenizes them per question | Measured 182–248 ms per hybrid retrieval over 3,883 passages on a 2-vCPU host (`scripts/bench_storage.py`); ANN and full-text indexes are roadmap |
+| Encryption key missing, wrong, or data altered | Startup refused if the key can't load; `/ask` returns `500 stored documents could not be decrypted` | Fails closed; see [operations](docs/operations.md) |
+| Cross-encoder reranker without `sentence-transformers` or a local model | Fails on the first question with a clear error | Interface only in this repo; not tested here |
+| Concurrent writes | SQLite serializes writers | Postgres for heavy multi-writer loads (roadmap) |
 
 ## Observability
 
@@ -306,36 +291,90 @@ instantly (2 vCPUs shared by client, gateway and stub; one uvicorn worker):
 | 32 | 86.5 ms | 292.6 ms | 106 req/s |
 
 Also measured here, each labeled with its setup: retrieval quality on the bundled golden set (above, under
-[Quality](#quality)) and the cost of encryption at rest plus backup/restore time on a synthetic
+[Quality](#quality-measured)) and the cost of encryption at rest plus backup/restore time on a synthetic
 3,883-passage collection ([docs/operations.md](docs/operations.md), `scripts/bench_storage.py`).
 
 That measurement found a real bottleneck: building an HTTP client per upstream call cost about 48 ms of
 blocking CPU and capped the gateway at about 17 req/s. v0.5 pools one client per event loop (about 6x
 throughput on the same host). Details, hardware and reproduction steps are in the benchmarks doc.
 
-## Failure modes
+## Console
 
-| Situation | Behavior | Notes |
-|---|---|---|
-| Inference server down or unreachable | `502 model runtime unavailable: <error>`; `/health` reports `backend_ok: false`; `gateway_backend_errors_total` increments | For streaming too: the first event is read before the response starts, so clients get a 502, not a broken 200 stream |
-| Inference server returns an error | Status and body passed through (e.g. 404 unknown model) | Same contract as v0.4 |
-| Stream fails after the first token | The stream ends early; usage, token metrics and the `completion` audit entry for that request are not recorded | Not retried; the backend error is counted in `gateway_backend_errors_total` |
-| Key over its limit | `429 rate limit exceeded (N/min)`, counted per key label in metrics | Limiter is in memory, per process |
-| More than one gateway process | Each process enforces its own limit (effective limit × N); audit appends are serialized per process only | Run one process per host, or add a shared store (roadmap). The Helm schema caps `replicaCount` at 1 |
-| Revoked or unknown key | `401` | |
-| Expired, forged or wrong-audience token | `401` with `WWW-Authenticate: Bearer error="invalid_token"` | Detail says which check failed |
-| Identity provider unreachable | Cached signing keys keep working for one more cache period (`GATEWAY_OIDC_JWKS_CACHE_SECONDS`), then token requests get `503`; API keys are unaffected | No keys fetched yet: `503` immediately |
-| IdP rotates its signing key | Unknown `kid` triggers one JWKS refetch (at most every 30 s); retired keys stop working after the next refetch | |
-| `/v1/pull` with a non-Ollama backend | `501` | The inference server owns its models |
-| Model not pinned, or its digest changed (`GATEWAY_MODEL_POLICY=enforce`) | `403 model 'x' is not allowed by the model policy (unpinned \| mismatch \| missing \| error)`; audited `model_verification` | `warn` serves it, logs once per verification and counts `gateway_model_policy_decisions_total` |
-| Backend unreachable during model verification | Startup continues after at most 10 s; under `enforce` requests get `403 (error)` until verification succeeds | Fails closed |
-| Audit file edited | `GET /admin/audit/verify` returns the first bad line | Rewriting the newest entries isn't detectable without the WORM copy (ADR 0003) |
-| Caller lacks access to a collection or document | Same `404`/empty list as a missing collection; denial audited | No existence oracle through the API |
-| Poisoned document | Passage flagged (`injection_flags`); its instructions are not supposed to be followed, but its claims can be cited | ADR 0004; only admins can add documents |
-| Large collections | Exact search scores every readable passage on each question, and BM25 tokenizes them per question | Measured 182–248 ms per hybrid retrieval over 3,883 passages on a 2-vCPU host (`scripts/bench_storage.py`); ANN and full-text indexes are roadmap |
-| Encryption key missing, wrong, or data altered | Startup refused if the key can't load; `/ask` returns `500 stored documents could not be decrypted` | Fails closed; see [operations](docs/operations.md) |
-| Cross-encoder reranker without `sentence-transformers` or a local model | Fails on the first question with a clear error | Interface only in this repo; not tested here |
-| Concurrent writes | SQLite serializes writers | Postgres for heavy multi-writer loads (roadmap) |
+The console exercises the controls above end to end on a realistic workload: two employees asking the same
+question get different answers and citations, each answer traces to an audit entry, and the governance
+screens call the gateway's own policy, model-pinning and eval code.
+
+One set of static files in [`demo/`](demo/) (`index.html`, `app.js`, `assistant.js`, `screens.js`,
+`adapters.js`, `ui.js`, `styles.css`) runs in two modes:
+
+- **Demo** (GitHub Pages): `DemoAdapter` loads Pyodide 0.26.4 and runs the gateway's own modules through
+  `demo/engine.py`, with a simulated backend (hashed bag-of-words embeddings, extractive answers, a stand-in
+  Ollama model inventory). The header says *Demo*.
+- **Live**: the gateway serves the same files at `/console/` and `LiveAdapter` calls its HTTP API with the
+  admin key or token you enter on Settings (kept in memory, or in `sessionStorage` if you ask). The header
+  says *Live · connected to &lt;host&gt;*. Mode comes from `GET ./api-mode` (a static file says `demo`; the
+  gateway answers `live`) or `?mode=demo|live`.
+
+The workload is a *fictional* business, **Cypress Harbor Credit Union** (340 employees in 10 departments,
+11 branches, one on-prem GPU server). The console opens on **Harbor Assistant**, the employee-facing chat;
+administration and governance sit behind it.
+
+- **Library**: 57 documents in five collections (staff policies, member services, lending, compliance, branch
+  operations), each with an owner, department, version and review date. 44 come from
+  [`scripts/sample_library.py`](scripts/sample_library.py) (seeded, checked in CI); HR compensation, the
+  engineering payments runbook, the BSA procedure and OFAC screening are restricted by access list.
+- **People**: Priya Shah (HR), Dana Ortiz (engineering), Marcus Bell (BSA compliance), Audrey Kim (internal
+  audit) and a branch lobby kiosk. API keys and the bootstrap admin appear in the technical view.
+- **Usage**: 90 days from [`scripts/generate_sample_company.py`](scripts/generate_sample_company.py), labelled
+  **Sample** everywhere, apart from **measured** results (Answer quality, Benchmarks) and the **simulated**
+  requests made in the tab.
+
+**Business and technical views** (header switch or `?view=technical`). The business view shows what
+employees and administrators see: plain-language access ("Restricted to the hr group"), document titles,
+friendly audit-event names. The technical view adds retrieval scores and modes, API keys and token limits,
+raw access-list entries, model digests, the lock file and ML-BOM, and the modules running in the tab.
+
+**Access before ranking, across collections.** *All sources I can read* (the default) searches every
+collection the person may read: the access decision runs per collection before any passage is scored, then
+passages are ranked together. An answer quotes only sentences from its best-matching document; a question
+nothing in the library answers well gets "I couldn't find that in the documents you can access" instead of
+an unrelated quote (a relevance floor on vector similarity; console only, not applied to the eval).
+
+![Usage and impact: questions answered, answered from documents, employees using it, hours saved, restricted content withheld, cost per answer, and adoption by department for the sample credit union](docs/img/console-business.png)
+
+| Screen | What it does |
+|---|---|
+| Ask | Chat with streamed answers, numbered citations and source cards; a citation opens the document with the quoted passage highlighted, its owner, version, review date and who may read it. Ask as someone else or compare two people side by side, search one collection or all. Technical view: retrieval mode, reranker, passage count, model-only chat (readers get 403) and a retrieval-details table per answer (scores, access rule, injection flags, audit line) |
+| Usage and impact | For the sample credit union over 7, 30 or 90 days: questions answered, share answered from documents with citations, employees using it, hours saved and cost per answer (with stated assumptions), restricted content withheld, member data sent outside (zero), answers rated helpful, each against the previous period; questions per day; adoption by department; topics; response time; knowledge-base collections and who may read them; governance checks; recent activity |
+| Usage and impact › This session | Requests, identities, collections and documents, audit status and access decisions for what was done in this tab |
+| Documents | The library with titles, owners and review dates, a filter, add or upload, per-collection and per-document access lists, and a plain-language access matrix of who can read which document |
+| People and keys | People and applications with their roles and groups; API keys with usage against the rate limit, burst test and revoke (technical view); SSO group-to-role mapping |
+| Audit log | The hash-chained log with friendly event names, filters, search and paging; each row opens a decision timeline (sign-in, access decision, retrieval, sources, answer, hashes). "Log intact" check; demo mode adds a tamper-detection test |
+| Access policy | What is in effect now in plain language, then the runtime policy as JSON, validated with the gateway's own types and `identity.check_role`, applied and audited, with a "try a change" scenario before and after |
+| Models | Backend health, served models, off/warn/enforce policy; technical view adds digests, lock-file verification and validation, and ML-BOM model components |
+| Answer quality | The `scripts/rag_eval.py` scorecard per configuration against `evals/thresholds.json` (measured on the benchmark library), questions not answered perfectly; demo mode re-runs the eval in the browser and compares |
+| Settings | Mode, credential (live), modules running in the tab (technical view), and what is simulated |
+
+Interface details (navigation, views, themes) are listed in the [CHANGELOG](CHANGELOG.md). **Run it live:**
+
+```bash
+docker compose up        # then open http://localhost:8080/console/
+docker compose logs gateway | grep "Bootstrap admin"     # the admin key to paste on Settings
+```
+
+That stack needs no model or GPU: the gateway talks to `mock-llm`, which is
+[`scripts/mock_openai_server.py`](scripts/mock_openai_server.py) in **simulated** mode (extractive answers,
+hashed embeddings; not a language model). Usage and impact › This session's *Load sample data* adds the
+sample library and the keys through the API. For real answers, Ollama stays the default backend:
+`docker compose --env-file profiles/compose-ollama.env --profile ollama up -d`, then pull `llama3.1:8b` and
+`nomic-embed-text` (see the top of `docker-compose.yml`). The older single-file admin page is still served
+at `/admin`.
+
+Console endpoints (all admin-only): `GET /admin/overview`, `GET /admin/audit/entries`,
+`GET /admin/access-matrix?collection=`, `GET /admin/policy`, `POST /admin/policy/validate`,
+`PUT /admin/policy` (in memory, audited as `policy_changed`; a restart reads the environment again),
+`GET /admin/rate-limits`, `POST /admin/models/lock/validate`, `GET /admin/models/mlbom`; plus
+`GET /console/api-mode` and per-request `retrieval_mode` / `reranker` on `/ask`.
 
 ## Quickstart
 
@@ -443,9 +482,8 @@ cosine similarity of embeddings and fuses the two rankings with Reciprocal Rank 
 question); an optional reranker (`GATEWAY_RERANKER=lexical`, or `cross_encoder` with a local
 sentence-transformers model, untested here) reorders the top candidates. The chat model answers from
 the top passages only. Each source's `score` is the final ranking score, with `scores` holding the
-components (`vector`, `bm25`, `rrf`, `rerank`). Each source is
-marked `cited` if the answer references it, and `injection_flags` lists any injection heuristics the
-passage matched.
+components (`vector`, `bm25`, `rrf`, `rerank`). Each source is marked `cited` if the answer references it,
+and `injection_flags` lists any injection heuristics the passage matched.
 
 ### Who can read what
 
@@ -513,9 +551,10 @@ served at that moment: compare digests with the publisher's before relying on th
 | `collection_acl_changed`, `document_acl_changed` | Access-list changes, before and after, with who made them |
 | `policy_changed` | Runtime policy applied from the console (`PUT /admin/policy`), before and after, with who applied it |
 
-Each entry includes the SHA-256 of the previous entry. Editing or deleting a line breaks the chain from
+Each entry includes the SHA-256 of the previous entry, so editing or deleting a line breaks the chain from
 that point. `GET /admin/audit/verify` (and the admin page) reports `chain intact` or the first tampered
-line number; the console's Audit screen shows each entry as a decision timeline. Archive the file to WORM storage; see [`docs/compliance.md`](docs/compliance.md).
+line number; the console's Audit screen shows each entry as a decision timeline. Archive the file to WORM
+storage; see [`docs/compliance.md`](docs/compliance.md).
 
 ## Configuration
 
@@ -612,6 +651,10 @@ python scripts/demo_smoke.py --live          # optional: headless browser test o
 To publish the console, enable GitHub Pages for the repository (Settings → Pages → deploy from the `main`
 branch, root folder); it is then at `https://coreymathie.github.io/private-llm-platform/demo/`.
 `.nojekyll` makes Pages serve the Python files as-is.
+
+## Author
+
+Designed and built by Corey Mathie, AI Solutions Architect.
 
 ## License
 
