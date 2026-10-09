@@ -10,13 +10,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5  # tests/helm_render (chart render harness)
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7  # tests/helm_render (chart render harness)
         with:
           go-version: stable
           cache: false
-      - uses: azure/setup-helm@v4
-      - uses: actions/setup-python@v5
+      - uses: azure/setup-helm@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -40,8 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -52,7 +52,7 @@ jobs:
       - name: Demo mode (Pyodide from the CDN)
         continue-on-error: true
         run: python scripts/demo_smoke.py --screenshots smoke-screenshots
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: console-screenshots
