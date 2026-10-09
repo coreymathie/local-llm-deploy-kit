@@ -35,8 +35,9 @@ Secret, or OIDC without an issuer or audience.
 
 - **Not run in the build environment:** `helm lint`, `helm template` and `helm install`. Helm could not be
   downloaded there (the release host and the Go module proxy were blocked by the egress policy), there was no
-  Docker daemon to build the image, and no cluster. CI runs `helm lint` and `helm template` on every push
-  (`.github/workflows/ci.yml`); those steps have not been observed passing yet.
+  Docker daemon to build the image, and no cluster. CI runs `helm lint --strict` and `helm template` (vLLM GPU
+  and air-gapped values) on every push (`.github/workflows/ci.yml`), and those steps pass; `helm install` on a
+  cluster has not been run.
 - **Run here** (`tests/test_helm_chart.py`): `values.yaml` and both example values files validate against
   `values.schema.json`, and the schema rejects unsafe values (more than one replica, `latest` tags, HMAC
   algorithms, unknown roles). The templates are rendered by `tests/helm_render/render.go`, a stdlib-only Go

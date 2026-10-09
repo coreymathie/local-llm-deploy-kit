@@ -73,14 +73,15 @@ delay; it is not a model) as the upstream, the gateway with `BACKEND=openai_comp
 A second gateway run gave 92 / 113 / 112 RPS at concurrency 1 / 8 / 32 (p50 10.1 / 67.5 / 288.7 ms).
 
 **Interpretation.** At concurrency 1 the gateway adds roughly 6 ms at p50 to a 64-token streamed request. A
-single uvicorn worker on this 2-vCPU host saturates at about 100–110 requests/s, after which extra concurrency
+single uvicorn worker on this 2-vCPU host levels off at 92–113 requests/s across the two runs, after which extra concurrency
 turns into queueing. These numbers bound the gateway only; whether the gateway or the inference server is the
 limit for a given deployment has to be measured with a real model (method above). Scaling the gateway past one
 process needs a shared rate-limit store; see the failure modes in [operations.md](operations.md#failure-modes).
 
 **Bottleneck found and fixed during this measurement.** Up to v0.4 the gateway built a new
 `httpx.AsyncClient` for every upstream call. Creating a client builds an SSL context and loads the CA bundle,
-which took about 48 ms of blocking CPU on this host. Measured with the same setup (200 requests per level):
+which took about 48 ms of blocking CPU on this host. Same setup; the 0.4 row is a 200-requests-per-level run,
+the 0.5 row repeats the 300-request run above:
 
 | Version | Concurrency 1: RPS, p50 | Concurrency 8: RPS, p50 | Concurrency 32: RPS, p50 |
 |---|---|---|---|
